@@ -1,0 +1,136 @@
+---
+title: Introduction to FSM
+description: A Firebase-inspired state management library for Flutter that simplifies signaling, data passing, and communication between widgets
+---
+
+# Introduction to FSM
+
+FSM (Flutter State Management) is a modern, Firebase-inspired state management library that makes it simple to share state and communicate between widgets in your Flutter applications.
+
+## What is FSM?
+
+FSM is essentially a modern EventBus implementation designed specifically for building real-time, API-based Flutter apps. It provides a familiar Firebase-like API that makes state management intuitive and straightforward.
+
+Instead of complex patterns and boilerplate code, FSM lets you:
+
+- **Store and retrieve data** using familiar Firebase-like paths
+- **Listen to changes** with reactive streams
+- **Update state** from anywhere in your app
+- **Build reactive UIs** with specialized stream builder widgets
+
+<Note>
+  FSM uses the same collection/document path structure as Firebase, making it easy to learn if you're already familiar with Firebase.
+</Note>
+
+## Why FSM?
+
+<CardGroup cols={2}>
+  <Card title="Firebase-inspired API" icon="fire">
+    Use familiar collection/document patterns for organizing your state. No new concepts to learn if you know Firebase.
+  </Card>
+  <Card title="Reactive by default" icon="bolt">
+    Built on RxDart streams for powerful reactive programming. Your UI automatically updates when data changes.
+  </Card>
+  <Card title="Zero boilerplate" icon="code">
+    No providers, no complex setup. Just start using F.instance and you're ready to go.
+  </Card>
+  <Card title="Widget-friendly" icon="puzzle-piece">
+    Includes specialized widgets like FStreamBuilder and FDocumentStreamBuilder for seamless Flutter integration.
+  </Card>
+</CardGroup>
+
+## Key features
+
+### Collections and documents
+
+Organize your state using Firebase-style paths:
+
+```dart
+// Access a document in a collection
+F.instance.collection('users').doc('user123')
+
+// Nested collections
+F.instance.collection('posts').doc('post1').collection('comments').doc('comment1')
+```
+
+### Reactive streams
+
+Listen to changes with streams that automatically notify listeners:
+
+```dart
+F.instance.collection('home').doc('counter').snapshots().listen((snapshot) {
+  print('Counter updated: ${snapshot.data}');
+});
+```
+
+### Stream builder widgets
+
+Build reactive UIs with specialized widgets:
+
+```dart
+FDocumentStreamBuilder<int>(
+  document: 'home/counter',
+  initialData: 0,
+  builder: (context, value) {
+    return Text('Count: $value');
+  },
+)
+```
+
+### Listener mixins
+
+Manage subscriptions automatically with lifecycle-aware mixins:
+
+```dart
+class _MyWidgetState extends State<MyWidget> with FListenerStateMixin {
+  @override
+  void initState() {
+    super.initState();
+    listenF(F.instance.collection('home').doc('counter'), (data) {
+      print('Update: $data');
+    });
+  }
+  // Automatically cleaned up on dispose
+}
+```
+
+## Use cases
+
+FSM is perfect for:
+
+- **Real-time applications** - Chat apps, live dashboards, collaborative tools
+- **State sharing** - Passing data between distant widgets without prop drilling
+- **Event-driven UIs** - Responding to user actions across your app
+- **API state management** - Managing data from backend services
+
+<Tip>
+  FSM works great alongside other state management solutions. Use it for cross-widget communication while keeping local state management simple.
+</Tip>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Add FSM to your Flutter project in minutes
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first FSM app with a step-by-step tutorial
+  </Card>
+</CardGroup>
+
+## Architecture
+
+FSM maintains an in-memory database of streams organized by path. When you set data:
+
+1. FSM creates or updates a stream at the specified path
+2. The stream emits the new data to all listeners
+3. Widgets listening to that stream automatically rebuild
+
+This architecture provides:
+- **Efficient updates** - Only widgets listening to changed data rebuild
+- **Memory efficiency** - Streams are automatically cleaned up when no longer needed
+- **Type safety** - Full Dart type support with generics
+
+<Warning>
+  FSM stores state in memory. Data is lost when your app closes. For persistent storage, integrate with a backend service or local database.
+</Warning>

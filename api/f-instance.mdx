@@ -1,0 +1,109 @@
+---
+title: "F.instance"
+description: "Singleton instance to access FSM database and event database"
+---
+
+## Overview
+
+The `F.instance` singleton provides the entry point for all FSM operations. Use it to access databases and manage global state.
+
+## Properties
+
+<ResponseField name="instance" type="F" required>
+  Static getter that returns the singleton instance of F.
+  
+  ```dart
+  F.instance.database().collection('users').doc('userId')
+  ```
+</ResponseField>
+
+<ResponseField name="globalObserverListener" type="PublishSubject<dynamic>">
+  A global listener that streams all FSM updates across the application.
+  
+  The internal listener implementation is a static instance, so this getter reinitializes the stream if it has been closed.
+  
+  This listener is useful for debugging FSM updates.
+  
+  ```dart
+  if (FlavorConfig.isDebug) {
+    F.instance.globalObserverListener.listen((value) {
+      print('Update: $value');
+    });
+  }
+  ```
+</ResponseField>
+
+## Methods
+
+### database
+
+<ParamField path="database" type="String?" optional>
+  The database name. If not provided, uses the default database.
+</ParamField>
+
+Returns a `FirestoreDatabaseReference` to interact with the specified database.
+
+```dart
+FirestoreDatabaseReference database([String? database])
+```
+
+**Example:**
+
+```dart
+// Use default database
+F.instance.database().collection('users')
+
+// Use named database
+F.instance.database('production').collection('users')
+```
+
+### eventDatabase
+
+<ParamField path="database" type="String?" optional>
+  The event database name. If not provided, uses 'e' as the default.
+</ParamField>
+
+Returns a `FirestoreEventDatabaseReference` for event-specific operations.
+
+```dart
+FirestoreEventDatabaseReference eventDatabase([String? database])
+```
+
+**Example:**
+
+```dart
+// Use default event database ('e')
+F.instance.eventDatabase().collection('events')
+
+// Use custom event database
+F.instance.eventDatabase('analytics').collection('events')
+```
+
+### destroy
+
+Cleans up all FSM resources by closing all streams and clearing collections, snapshots, and values.
+
+```dart
+void destroy()
+```
+
+**Example:**
+
+```dart
+// Clean up when app is terminating
+F.instance.destroy();
+```
+
+<Warning>
+  This will close all active streams and clear all cached data. Use with caution.
+</Warning>
+
+## Internal State
+
+The F instance maintains several static maps for managing state:
+
+- `collections`: Map of collection paths to their stream controllers
+- `snapshots`: Map of document paths to their snapshot stream controllers
+- `values`: Map of value paths to their data stream controllers
+
+These are managed internally and should not be accessed directly.

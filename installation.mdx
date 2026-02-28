@@ -1,0 +1,162 @@
+---
+title: Installation
+description: Add FSM to your Flutter project and start managing state in minutes
+---
+
+# Installation
+
+Get started with FSM by adding it to your Flutter project's dependencies.
+
+## Requirements
+
+Before installing FSM, ensure your project meets these requirements:
+
+- **Flutter**: 3.0.0 or higher
+- **Dart SDK**: 3.2.2 or higher
+
+## Add FSM to your project
+
+<Steps>
+  <Step title="Add the dependency">
+    Add FSM to your `pubspec.yaml` file:
+
+    ```yaml pubspec.yaml
+    dependencies:
+      flutter:
+        sdk: flutter
+      fsm: ^1.0.1
+    ```
+
+    <Tip>
+      Check [pub.dev](https://pub.dev/packages/fsm) for the latest version of FSM.
+    </Tip>
+  </Step>
+
+  <Step title="Install the package">
+    Run the following command in your terminal:
+
+    ```bash
+    flutter pub get
+    ```
+
+    This downloads FSM and its dependency (RxDart) to your project.
+  </Step>
+
+  <Step title="Import FSM">
+    Import FSM in your Dart files:
+
+    ```dart
+    import 'package:fsm/fsm.dart';
+    ```
+
+    You're now ready to use FSM in your Flutter application!
+  </Step>
+</Steps>
+
+## Alternative installation methods
+
+### Using Flutter CLI
+
+You can also add FSM using the Flutter command line:
+
+```bash
+flutter pub add fsm
+```
+
+This automatically adds the latest version to your `pubspec.yaml` and runs `flutter pub get`.
+
+### Adding from pub.dev
+
+Visit the [FSM package page on pub.dev](https://pub.dev/packages/fsm) to:
+
+- View detailed package information
+- Check compatibility with your Flutter version
+- Browse the complete API documentation
+- See package health metrics and scores
+
+## What's included
+
+When you install FSM, you get:
+
+<CardGroup cols={2}>
+  <Card title="Core API" icon="database">
+    The main `F` class with collection and document methods for managing state
+  </Card>
+  <Card title="Stream builders" icon="stream">
+    Widgets like `FStreamBuilder`, `FDocumentStreamBuilder`, and `FCollectionStreamBuilder`
+  </Card>
+  <Card title="Listener mixins" icon="headphones">
+    Mixins for automatic subscription management: `FListenerStateMixin`, `FListenerMixin`, and more
+  </Card>
+  <Card title="Type wrappers" icon="box">
+    Reference and snapshot wrappers for type-safe data access
+  </Card>
+</CardGroup>
+
+## Dependencies
+
+FSM has minimal dependencies:
+
+- **RxDart** (^0.28.0) - Provides reactive programming support with `BehaviorSubject` and `PublishSubject`
+- **Flutter SDK** - The Flutter framework itself
+
+<Note>
+  RxDart is automatically installed when you add FSM, so you don't need to add it separately.
+</Note>
+
+## Verify your installation
+
+To verify FSM is correctly installed, create a simple test:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:fsm/fsm.dart';
+
+void main() {
+  // Test FSM by setting and getting a value
+  F.instance.collection('test').doc('data').setData('Hello FSM!');
+  
+  final snapshot = F.instance.collection('test').doc('data').snapshot;
+  print('FSM works! Data: ${snapshot.data}'); // Output: FSM works! Data: Hello FSM!
+  
+  runApp(MyApp());
+}
+```
+
+If this code runs without errors, FSM is properly installed.
+
+## Next steps
+
+<Card title="Quickstart guide" icon="rocket" href="/quickstart">
+  Follow our quickstart tutorial to build a complete counter app with FSM
+</Card>
+
+## Troubleshooting
+
+### Version conflicts
+
+If you encounter version conflicts with RxDart:
+
+1. Check your `pubspec.yaml` for other packages that depend on RxDart
+2. Try updating all packages: `flutter pub upgrade`
+3. If issues persist, you may need to adjust version constraints
+
+### Import errors
+
+If you see import errors:
+
+- Ensure you ran `flutter pub get` after adding the dependency
+- Check that the import statement is correct: `import 'package:fsm/fsm.dart';`
+- Try running `flutter clean` and then `flutter pub get`
+
+### IDE not recognizing FSM
+
+If your IDE doesn't recognize FSM:
+
+- Restart your IDE
+- Run `flutter pub get` from the IDE's terminal
+- Try invalidating caches (in IntelliJ/Android Studio: File > Invalidate Caches / Restart)
+
+<Warning>
+  Make sure your Flutter SDK is up to date. Run `flutter upgrade` to get the latest stable version.
+</Warning>

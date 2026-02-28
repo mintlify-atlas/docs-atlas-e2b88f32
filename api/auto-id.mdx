@@ -1,0 +1,109 @@
+---
+title: "AutoID"
+description: "Generate unique identifiers for FSM documents"
+---
+
+## Overview
+
+The `AutoID` class provides a static method for generating unique 20-character alphanumeric identifiers. These IDs are commonly used when creating new documents without specifying a custom ID.
+
+## AutoID Class
+
+### autoID
+
+Generates a random 20-character alphanumeric identifier.
+
+```dart
+static String get autoID
+```
+
+<ParamField path="Returns" type="String">
+  A randomly generated 20-character identifier using characters A-Z, a-z, and 0-9
+</ParamField>
+
+### Constants
+
+<ParamField path="autoIdLength" type="int" default="20">
+  The length of generated auto IDs
+</ParamField>
+
+<ParamField path="autoIdAlphabet" type="String">
+  The character set used for ID generation: `'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'`
+</ParamField>
+
+## Usage
+
+### Basic ID Generation
+
+Generate a unique ID for a new document:
+
+```dart
+import 'package:fsm/fsm.dart';
+
+// Generate a unique ID
+String documentId = AutoID.autoID;
+print(documentId); // e.g., "K7Bx9mQwLp3NrTvY2hF8"
+
+// Use it to create a document
+await F.instance
+  .collection('users')
+  .doc(documentId)
+  .setData({'name': 'John Doe'});
+```
+
+### Automatic ID Generation
+
+When you call `collection.doc()` without an argument, FSM automatically uses `AutoID.autoID`:
+
+```dart
+// These are equivalent:
+final doc1 = F.instance.collection('users').doc();
+final doc2 = F.instance.collection('users').doc(AutoID.autoID);
+```
+
+### Creating Documents with Auto IDs
+
+The `collection.add()` method automatically generates an ID:
+
+```dart
+// Automatically generates ID and creates document
+final docRef = await F.instance
+  .collection('posts')
+  .add({
+    'title': 'My First Post',
+    'content': 'Hello, world!',
+  });
+
+print(docRef.documentID); // Prints auto-generated ID
+```
+
+### Pre-generating IDs
+
+Generate IDs before creating documents:
+
+```dart
+// Generate multiple IDs upfront
+List<String> userIds = List.generate(5, (_) => AutoID.autoID);
+
+// Use them later
+for (String id in userIds) {
+  await F.instance
+    .collection('users')
+    .doc(id)
+    .setData({'status': 'pending'});
+}
+```
+
+## Implementation Details
+
+- **Uniqueness**: IDs are generated using Dart's `Random` class with 62 possible characters (A-Z, a-z, 0-9)
+- **Length**: Always 20 characters long
+- **Collision Probability**: With 62^20 possible combinations, collision probability is extremely low
+- **Performance**: ID generation is fast and suitable for high-frequency use
+
+## Notes
+
+- AutoID uses a static `Random` instance for efficient ID generation
+- IDs are not cryptographically secure and should not be used for security-sensitive purposes
+- The character set excludes special characters to ensure compatibility with various storage systems
+- IDs are case-sensitive

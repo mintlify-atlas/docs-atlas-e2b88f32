@@ -1,0 +1,157 @@
+---
+title: 'Listener Mixins Overview'
+description: 'Manage stream subscriptions with automatic cleanup in FSM'
+keywords: ['listener', 'mixin', 'stream', 'subscription', 'cleanup', 'dispose']
+---
+
+FSM provides listener mixins for managing stream subscriptions with automatic cleanup. These mixins handle subscription lifecycle management, preventing memory leaks and ensuring proper resource disposal.
+
+## Available Mixins
+
+FSM offers two families of listener mixins:
+
+### FListener Family
+
+Specialized mixins for FSM reference wrappers (documents, collections, and values):
+
+- **FListenerMixin** - Base mixin for any class
+- **FListenerStateMixin** - For StatefulWidget State classes with automatic cleanup
+- **FListenerChangeNotifierMixin** - For ChangeNotifier classes with automatic cleanup
+
+<Card title="FListener Mixins" icon="database" href="/mixins/flistener">
+  Learn about FSM-specific listener mixins with group management
+</Card>
+
+### FStreamSubscriber Family
+
+General-purpose mixins for any Stream in Dart:
+
+- **FStreamSubscriberMixin** - Base mixin for any class
+- **FStreamSubscriberStateMixin** - For StatefulWidget State classes with automatic cleanup
+- **FStreamSubscriberChangeNotifierMixin** - For ChangeNotifier classes with automatic cleanup
+
+<Card title="FStreamSubscriber Mixins" icon="tower-broadcast" href="/mixins/fstreamsubscriber">
+  Learn about general-purpose stream subscription mixins
+</Card>
+
+## Key Features
+
+### Automatic Cleanup
+
+State and ChangeNotifier variants automatically cancel all subscriptions in their `dispose()` method:
+
+```dart
+@override
+void dispose() {
+  closeF(); // or cancelSubscriptions()
+  super.dispose();
+}
+```
+
+### Subscription Groups
+
+FListener mixins support grouping subscriptions, allowing you to cancel specific sets of listeners without closing all subscriptions.
+
+### Memory Leak Prevention
+
+By tracking all subscriptions internally, these mixins ensure no stream listeners are left running after disposal.
+
+## Choosing the Right Mixin
+
+<Tabs>
+  <Tab title="For FSM References">
+    Use **FListener** mixins when working with FSM's `DocumentReferenceWrapper`, `CollectionReferenceWrapper`, or `ValueReferenceWrapper`:
+
+    ```dart
+    class MyController with FListenerMixin {
+      void startListening() {
+        listenF(fsm.doc('users/123'), (snapshot) {
+          print('Document updated');
+        });
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="For Generic Streams">
+    Use **FStreamSubscriber** mixins for any Dart stream:
+
+    ```dart
+    class MyService with FStreamSubscriberMixin {
+      void startListening(Stream<int> dataStream) {
+        listen(dataStream, (value) {
+          print('Received: $value');
+        });
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+Choose State variants for StatefulWidget State classes and ChangeNotifier variants for ChangeNotifier classes to get automatic cleanup in `dispose()`.
+</Note>
+
+## Common Patterns
+
+### In StatefulWidgets
+
+```dart
+class MyWidget extends StatefulWidget {
+  @override
+  State<MyWidget> createState() => _MyWidgetState();
+}
+
+class _MyWidgetState extends State<MyWidget> with FListenerStateMixin<MyWidget> {
+  @override
+  void initState() {
+    super.initState();
+    listenF(fsm.doc('users/123'), (snapshot) {
+      setState(() {
+        // Update UI
+      });
+    });
+  }
+  // Automatic cleanup in dispose()
+}
+```
+
+### In Controllers/Services
+
+```dart
+class UserController with FListenerMixin {
+  void watchUser(String userId) {
+    listenF(fsm.doc('users/$userId'), (snapshot) {
+      // Handle updates
+    });
+  }
+
+  void cleanup() {
+    closeF(); // Manual cleanup
+  }
+}
+```
+
+### With ChangeNotifier
+
+```dart
+class UserNotifier extends ChangeNotifier with FListenerChangeNotifierMixin {
+  void watchUser(String userId) {
+    listenF(fsm.doc('users/$userId'), (snapshot) {
+      notifyListeners();
+    });
+  }
+  // Automatic cleanup in dispose()
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="FListener Mixins" icon="database" href="/mixins/flistener">
+    Detailed documentation for FSM reference listeners
+  </Card>
+  <Card title="FStreamSubscriber Mixins" icon="tower-broadcast" href="/mixins/fstreamsubscriber">
+    Detailed documentation for generic stream subscribers
+  </Card>
+</CardGroup>

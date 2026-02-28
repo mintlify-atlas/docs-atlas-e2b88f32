@@ -1,0 +1,180 @@
+---
+title: DocumentSnapshotWrapper
+description: A snapshot of a document in FSM state management
+---
+
+## Overview
+
+The `DocumentSnapshotWrapper` class represents a snapshot of a document's data at a specific point in time. It provides access to the document's data, metadata, and reference information.
+
+## Class Definition
+
+```dart
+class DocumentSnapshotWrapper {
+  final PathDelegate pathDelegate;
+  final F f;
+  DocumentEvent? documentEvent;
+  dynamic data;
+
+  DocumentSnapshotWrapper._(this.pathDelegate, this.f, this.documentEvent)
+      : data = documentEvent?.data;
+}
+```
+
+## Properties
+
+<ResponseField name="data" type="dynamic">
+  The document's data. Can be any type including Map, List, String, int, etc.
+</ResponseField>
+
+<ResponseField name="documentEvent" type="DocumentEvent?">
+  The document event containing the data, timestamp, and optional event name.
+</ResponseField>
+
+<ResponseField name="reference" type="DocumentReferenceWrapper">
+  A reference to the document.
+</ResponseField>
+
+<ResponseField name="path" type="String">
+  The full path to the document (including database and document path).
+</ResponseField>
+
+<ResponseField name="documentPath" type="String">
+  The document path relative to the database.
+</ResponseField>
+
+<ResponseField name="documentID" type="String">
+  The document's ID (last component of the path).
+</ResponseField>
+
+<ResponseField name="exists" type="bool">
+  Returns `true` if the document exists (data is not null).
+</ResponseField>
+
+## Methods
+
+### operator []
+
+Access document data by key.
+
+```dart
+dynamic operator [](String key)
+```
+
+**Parameters:**
+- `key` (String): The key to access in the document data
+
+**Returns:** The value associated with the key
+
+**Example:**
+```dart
+final snapshot = await F.instance.doc('users/user1').get();
+final name = snapshot['name'];
+final email = snapshot['email'];
+```
+
+### value()
+
+Get a nested value using a path.
+
+```dart
+dynamic value(String path)
+```
+
+**Parameters:**
+- `path` (String): The path to the value using `/` as separator
+
+**Returns:** The value at the specified path, or `null` if not found
+
+**Example:**
+```dart
+final snapshot = await F.instance.doc('users/user1').get();
+final city = snapshot.value('address/city');
+final zipCode = snapshot.value('address/zipCode');
+```
+
+## Usage Examples
+
+### Reading Document Data
+
+```dart
+// Get a document snapshot
+final snapshot = await F.instance.doc('users/user1').get();
+
+// Check if document exists
+if (snapshot.exists) {
+  // Access data directly
+  print('Name: ${snapshot['name']}');
+  
+  // Access nested data
+  final email = snapshot.value('contact/email');
+  print('Email: $email');
+  
+  // Get the full data
+  print('All data: ${snapshot.data}');
+}
+```
+
+### Listening to Document Changes
+
+```dart
+// Stream document snapshots
+F.instance.doc('users/user1').snapshots().listen((snapshot) {
+  if (snapshot.exists) {
+    print('User updated: ${snapshot['name']}');
+    print('Document ID: ${snapshot.documentID}');
+    print('Document path: ${snapshot.documentPath}');
+  }
+});
+```
+
+### Working with Document References
+
+```dart
+final snapshot = await F.instance.doc('users/user1').get();
+
+// Get the document reference
+final ref = snapshot.reference;
+
+// Update the document through its reference
+await ref.updateData({'lastSeen': FTimestamp.now()});
+```
+
+### Accessing Document Metadata
+
+```dart
+final snapshot = await F.instance.doc('users/user1').get();
+
+// Access the document event
+if (snapshot.documentEvent != null) {
+  print('Timestamp: ${snapshot.documentEvent!.timestamp}');
+  print('Event: ${snapshot.documentEvent!.event}');
+}
+
+// Get document identifiers
+print('Document ID: ${snapshot.documentID}');
+print('Full path: ${snapshot.path}');
+print('Document path: ${snapshot.documentPath}');
+```
+
+## Type Safety
+
+When working with typed data, cast the snapshot data appropriately:
+
+```dart
+final snapshot = await F.instance.doc('users/user1').get();
+
+if (snapshot.exists && snapshot.data is Map) {
+  final userData = snapshot.data as Map<String, dynamic>;
+  final name = userData['name'] as String;
+  final age = userData['age'] as int;
+  
+  print('$name is $age years old');
+}
+```
+
+## See Also
+
+- [DocumentReferenceWrapper](/api/document-reference) - Reference to a document
+- [DocumentEvent](/api/document-event) - Document event data
+- [CollectionReferenceWrapper](/api/collection-reference) - Reference to a collection

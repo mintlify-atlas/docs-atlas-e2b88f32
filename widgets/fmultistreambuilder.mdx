@@ -1,0 +1,257 @@
+---
+title: 'FMultiStreamBuilder'
+description: 'A widget that combines multiple FSM streams into a single reactive builder'
+---
+
+## Overview
+
+`FMultiStreamBuilder` is a powerful widget that allows you to listen to multiple FSM references simultaneously. It combines all stream updates into a single `Map<String, dynamic>` keyed by reference paths, making it ideal for building UIs that depend on multiple data sources.
+
+## Type Signature
+
+```dart
+class FMultiStreamBuilder extends StatefulWidget {
+  final List<ReferenceWrapper> references;
+  final StreamWidgetBuilder<Map<String, dynamic>> builder;
+
+  const FMultiStreamBuilder({
+    super.key,
+    required this.references,
+    required this.builder,
+  });
+}
+```
+
+## Type Definitions
+
+```dart
+typedef StreamWidgetBuilder<T> = Widget Function(BuildContext context, T value);
+```
+
+## Parameters
+
+<ParamField path="references" type="List<ReferenceWrapper>" required>
+  A list of FSM references to listen to. Can include any combination of `DocumentReferenceWrapper`, `CollectionReferenceWrapper`, or `ValueReferenceWrapper` objects.
+</ParamField>
+
+<ParamField path="builder" type="StreamWidgetBuilder<Map<String, dynamic>>" required>
+  A function that builds a widget based on the current state of all references. Receives `BuildContext` and a `Map<String, dynamic>` where keys are reference paths and values are the corresponding data.
+</ParamField>
+
+## Usage Example
+
+```dart
+FMultiStreamBuilder(
+  references: [
+    F.instance.collection('users').doc('currentUser'),
+    F.instance.collection('settings').doc('theme'),
+    F.instance.collection('notifications').doc('unread'),
+  ],
+  builder: (context, data) {
+    final user = data['users/currentUser'];
+    final theme = data['settings/theme'];
+    final unread = data['notifications/unread'];
+    
+    return UserDashboard(
+      user: user,
+      theme: theme,
+      unreadCount: unread,
+    );
+  },
+)
+```
+
+## How It Works
+
+<Note>
+  `FMultiStreamBuilder` uses a `BehaviorSubject` to combine multiple streams into a single stream. It automatically manages all stream subscriptions and cleanup.
+</Note>
+
+1. **Initialization**: Creates individual stream listeners for each reference
+2. **Type Resolution**: Automatically detects the type of each reference (document, collection, or value)
+3. **Stream Aggregation**: Combines all stream updates into a single `Map<String, dynamic>`
+4. **Reference Mapping**: Uses `reference.path` as the key for each value in the map
+5. **Reactive Updates**: Whenever any stream emits new data, the entire map is updated and passed to builder
+6. **Disposal**: Automatically cancels all stream subscriptions when widget is disposed
+
+## Reference Path Keys
+
+<Tip>
+  The map keys are the `path` property of each `ReferenceWrapper`. For documents, this is typically `'collection/document'`. Make sure you know the exact path to access the correct data.
+</Tip>
+
+```dart
+FMultiStreamBuilder(
+  references: [
+    F.instance.collection('posts').doc('post123'),  // Key: 'posts/post123'
+    F.instance.collection('users').doc('alice'),    // Key: 'users/alice'
+  ],
+  builder: (context, data) {
+    final post = data['posts/post123'];
+    final author = data['users/alice'];
+    
+    return PostCard(
+      title: post['title'],
+      authorName: author['name'],
+    );
+  },
+)
+```
+
+## Supported Reference Types
+
+The widget automatically handles different reference types:
+
+| Reference Type | Data Extraction |
+|----------------|----------------|
+| `DocumentSnapshotWrapper` | `snapshot.data` |
+| `DocumentReferenceWrapper` | Currently not handled (TODO in source) |
+| `ValueReferenceWrapper` | Direct value |
+
+<Warning>
+  Collection references (`DocumentReferenceWrapper` from collection snapshots) are not fully supported yet. The source code includes a TODO comment for this case. Use `FCollectionStreamBuilder` for collection data.
+</Warning>
+
+## Internal Stream Management
+
+The widget maintains three internal data structures:
+
+- `referenceStreams`: Maps reference paths to their streams
+- `referenceStreamSubscriptions`: Stores active stream subscriptions
+- `referenceSnapshotStream`: A `BehaviorSubject` that combines all updates
+
+## Lifecycle Management
+
+The widget handles the complete lifecycle automatically:
+
+1. **initState**: 
+   - Creates streams for all references
+   - Subscribes to each stream
+   - Updates the combined snapshot map on each event
+
+2. **build**: 
+   - Rebuilds when any reference emits new data
+   - Passes the complete snapshot map to builder
+
+3. **dispose**: 
+   - Cancels all stream subscriptions
+   - Closes the `BehaviorSubject`
+   - Clears all internal collections
+
+## Empty State Handling
+
+<Note>
+  The builder receives an empty map `{}` before any stream data arrives. Handle this case in your builder to avoid null errors.
+</Note>
+
+```dart
+FMultiStreamBuilder(
+  references: [/* ... */],
+  builder: (context, data) {
+    if (data.isEmpty) {
+      return CircularProgressIndicator();
+    }
+    
+    // Access data safely
+    final user = data['users/current'];
+    if (user == null) {
+      return Text('User not loaded');
+    }
+    
+    return Text('Hello, ${user['name']}');
+  },
+)
+```
+
+## Complete Example
+
+```dart
+class DashboardView extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return FMultiStreamBuilder(
+      references: [
+        F.instance.collection('users').doc('currentUser'),
+        F.instance.collection('stats').doc('daily'),
+        F.instance.collection('notifications').doc('unread'),
+        F.instance.collection('settings').doc('preferences'),
+      ],
+      builder: (context, data) {
+        // Handle loading state
+        if (data.isEmpty) {
+          return Center(child: CircularProgressIndicator());
+        }
+        
+        // Extract data with null safety
+        final user = data['users/currentUser'] ?? {};
+        final stats = data['stats/daily'] ?? {};
+        final unread = data['notifications/unread'] ?? 0;
+        final prefs = data['settings/preferences'] ?? {};
+        
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Welcome, ${user['name'] ?? 'User'}'),
+            actions: [
+              IconButton(
+                icon: Badge(
+                  label: Text('$unread'),
+                  child: Icon(Icons.notifications),
+                ),
+                onPressed: () => Navigator.pushNamed(context, '/notifications'),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              StatsCard(
+                views: stats['views'] ?? 0,
+                likes: stats['likes'] ?? 0,
+                shares: stats['shares'] ?? 0,
+              ),
+              Expanded(
+                child: ContentGrid(
+                  theme: prefs['theme'] ?? 'light',
+                  layout: prefs['layout'] ?? 'grid',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+```
+
+## Performance Considerations
+
+<Tip>
+  While `FMultiStreamBuilder` is convenient, be mindful of the number of references you're listening to. Each reference creates an active stream subscription. For very large numbers of streams (>10), consider whether you really need all of them simultaneously.
+</Tip>
+
+## Comparison with Single Stream Builders
+
+| Feature | FMultiStreamBuilder | Single Stream Builders |
+|---------|--------------------|-----------------------|
+| **Number of streams** | Multiple | One |
+| **Data format** | `Map<String, dynamic>` | Typed `T` |
+| **Use case** | Complex UIs with multiple data sources | Single data source |
+| **Type safety** | Manual type checking required | Automatic via generics |
+| **Performance** | More subscriptions | Single subscription |
+
+## Mixing Reference Types
+
+You can mix different types of references in a single widget:
+
+```dart
+FMultiStreamBuilder(
+  references: [
+    F.instance.collection('users').doc('alice'),        // Document
+    F.instance.collection('products').doc('product1'),  // Document
+    // Note: Collections not fully supported yet
+  ],
+  builder: (context, data) {
+    return CombinedView(data: data);
+  },
+)
+```

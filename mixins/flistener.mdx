@@ -1,0 +1,489 @@
+---
+title: 'FListener Mixins'
+description: 'Manage FSM reference subscriptions with automatic cleanup and group support'
+keywords: ['FListenerMixin', 'FListenerStateMixin', 'FListenerChangeNotifierMixin', 'subscription', 'cleanup']
+---
+
+FListener mixins provide specialized subscription management for FSM's reference wrappers (documents, collections, and values). They handle automatic stream creation, subscription tracking, and cleanup with support for grouped subscriptions.
+
+## Available Variants
+
+<CardGroup cols={3}>
+  <Card title="FListenerMixin" icon="puzzle-piece">
+    Base mixin for any class. Requires manual cleanup.
+  </Card>
+  <Card title="FListenerStateMixin" icon="mobile">
+    For State classes. Automatic cleanup in dispose().
+  </Card>
+  <Card title="FListenerChangeNotifierMixin" icon="bell">
+    For ChangeNotifier. Automatic cleanup in dispose().
+  </Card>
+</CardGroup>
+
+## Core Methods
+
+### listenF()
+
+Listens to FSM reference wrappers and automatically manages subscriptions.
+
+```dart
+void listenF(
+  ReferenceWrapper reference,
+  void Function(dynamic data) onData,
+  {Function? onError, String name = 'default'}
+)
+```
+
+<ParamField path="reference" type="ReferenceWrapper" required>
+  The FSM reference to listen to. Can be `DocumentReferenceWrapper`, `CollectionReferenceWrapper`, or `ValueReferenceWrapper`.
+</ParamField>
+
+<ParamField path="onData" type="Function" required>
+  Callback invoked when the reference emits new data.
+</ParamField>
+
+<ParamField path="onError" type="Function?">
+  Optional error handler for stream errors.
+</ParamField>
+
+<ParamField path="name" type="String" default="default">
+  Group name for managing related subscriptions together.
+</ParamField>
+
+### closeF()
+
+Cancels all subscriptions and closes all reference wrappers.
+
+```dart
+void closeF()
+```
+
+<Warning>
+For State and ChangeNotifier variants, `closeF()` is automatically called in `dispose()`. Manual calls are only needed with the base `FListenerMixin`.
+</Warning>
+
+### closeFGroup()
+
+Closes a specific group of subscriptions without affecting others.
+
+```dart
+void closeFGroup(String name)
+```
+
+<ParamField path="name" type="String" required>
+  The group name to close. Cancels all subscriptions in this group.
+</ParamField>
+
+## Usage Examples
+
+### Basic Document Listener
+
+```dart
+class UserRepository with FListenerMixin {
+  void watchUserProfile(String userId) {
+    listenF(
+      fsm.doc('users/$userId'),
+      (snapshot) {
+        final data = snapshot.data();
+        print('User updated: ${data['name']}');
+      },
+      onError: (error) {
+        print('Error: $error');
+      },
+    );
+  }
+
+  void cleanup() {
+    closeF();
+  }
+}
+```
+
+### In StatefulWidget
+
+```dart
+class ProfileScreen extends StatefulWidget {
+  final String userId;
+
+  const ProfileScreen({required this.userId});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> 
+    with FListenerStateMixin<ProfileScreen> {
+  Map<String, dynamic>? userData;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToUser();
+  }
+
+  void _listenToUser() {
+    listenF(
+      fsm.doc('users/${widget.userId}'),
+      (snapshot) {
+        setState(() {
+          userData = snapshot.data();
+        });
+      },
+      onError: (error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading profile: $error')),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (userData == null) {
+      return const CircularProgressIndicator();
+    }
+    return Text('Hello, ${userData!['name']}');
+  }
+  
+  // dispose() automatically calls closeF()
+}
+```
+
+### With ChangeNotifier
+
+```dart
+class ChatRoomNotifier extends ChangeNotifier 
+    with FListenerChangeNotifierMixin {
+  List<Map<String, dynamic>> messages = [];
+  Map<String, dynamic>? roomInfo;
+
+  void joinRoom(String roomId) {
+    // Listen to room info
+    listenF(
+      fsm.doc('rooms/$roomId'),
+      (snapshot) {
+        roomInfo = snapshot.data();
+        notifyListeners();
+      },
+    );
+
+    // Listen to messages
+    listenF(
+      fsm.collection('rooms/$roomId/messages'),
+      (snapshot) {
+        messages = snapshot.docs.map((doc) => doc.data()).toList();
+        notifyListeners();
+      },
+    );
+  }
+  
+  // dispose() automatically calls closeF()
+}
+```
+
+## Subscription Groups
+
+Group subscriptions to manage related listeners independently.
+
+### Creating Groups
+
+```dart
+class DashboardController with FListenerMixin {
+  void loadUserDashboard(String userId) {
+    // Profile group
+    listenF(
+      fsm.doc('users/$userId'),
+      (snapshot) => handleProfile(snapshot),
+      name: 'profile',
+    );
+
+    // Stats group
+    listenF(
+      fsm.doc('stats/$userId'),
+      (snapshot) => handleStats(snapshot),
+      name: 'stats',
+    );
+    
+    listenF(
+      fsm.collection('analytics/$userId/events'),
+      (snapshot) => handleEvents(snapshot),
+      name: 'stats',
+    );
+  }
+
+  void refreshStats() {
+    // Close only stats listeners, keep profile active
+    closeFGroup('stats');
+    // Recreate stats listeners...
+  }
+
+  void cleanup() {
+    closeF(); // Close all groups
+  }
+}
+```
+
+### Practical Group Usage
+
+<Tabs>
+  <Tab title="Tab Navigation">
+    ```dart
+    class TabbedView extends State<MyWidget> with FListenerStateMixin<MyWidget> {
+      int currentTab = 0;
+
+      void switchTab(int index) {
+        // Clean up previous tab's listeners
+        closeFGroup('tab-$currentTab');
+        
+        setState(() {
+          currentTab = index;
+        });
+        
+        // Set up new tab's listeners
+        _setupTabListeners(index);
+      }
+
+      void _setupTabListeners(int tab) {
+        switch (tab) {
+          case 0:
+            listenF(
+              fsm.collection('posts'),
+              (snapshot) => handlePosts(snapshot),
+              name: 'tab-0',
+            );
+            break;
+          case 1:
+            listenF(
+              fsm.collection('notifications'),
+              (snapshot) => handleNotifications(snapshot),
+              name: 'tab-1',
+            );
+            break;
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Conditional Features">
+    ```dart
+    class FeatureManager with FListenerMixin {
+      void enableRealtimeSync(String userId) {
+        listenF(
+          fsm.doc('sync/$userId'),
+          (snapshot) => syncData(snapshot),
+          name: 'realtime-sync',
+        );
+      }
+
+      void disableRealtimeSync() {
+        closeFGroup('realtime-sync');
+      }
+
+      void enableNotifications(String userId) {
+        listenF(
+          fsm.collection('notifications/$userId/items'),
+          (snapshot) => showNotifications(snapshot),
+          name: 'notifications',
+        );
+      }
+
+      void disableNotifications() {
+        closeFGroup('notifications');
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Automatic Cleanup
+
+State and ChangeNotifier variants automatically clean up in `dispose()`:
+
+<CodeGroup>
+
+```dart FListenerStateMixin
+mixin FListenerStateMixin<T extends StatefulWidget> on State<T> {
+  // ... methods ...
+
+  @override
+  void dispose() {
+    closeF();
+    super.dispose();
+  }
+}
+```
+
+```dart FListenerChangeNotifierMixin
+mixin FListenerChangeNotifierMixin on ChangeNotifier {
+  // ... methods ...
+
+  @override
+  void dispose() {
+    closeF();
+    super.dispose();
+  }
+}
+```
+
+</CodeGroup>
+
+<Check>
+No need to override `dispose()` or manually call `closeF()` when using State or ChangeNotifier variants. Cleanup is automatic!
+</Check>
+
+## Reference Type Support
+
+FListener mixins automatically detect and handle different reference types:
+
+<CodeGroup>
+
+```dart Document Reference
+// Calls reference.snapshots()
+listenF(
+  fsm.doc('users/123'),
+  (DocumentSnapshot snapshot) {
+    final data = snapshot.data();
+  },
+);
+```
+
+```dart Collection Reference
+// Calls reference.snapshots()
+listenF(
+  fsm.collection('users'),
+  (QuerySnapshot snapshot) {
+    final docs = snapshot.docs;
+  },
+);
+```
+
+```dart Value Reference (RTDB)
+// Calls reference.values()
+listenF(
+  fsm.value('status/online'),
+  (DatabaseEvent event) {
+    final value = event.snapshot.value;
+  },
+);
+```
+
+</CodeGroup>
+
+<Note>
+The mixin automatically calls the appropriate stream method (`snapshots()` or `values()`) based on the reference type.
+</Note>
+
+## Implementation Details
+
+The mixin maintains three internal collections:
+
+```dart
+final Map<String, ReferenceWrapper> _referenceWrappers = {};
+final Map<String, StreamSubscription> _subscriptions = {};
+final Map<String, Set<String>> _groups = {};
+```
+
+- **_referenceWrappers**: Stores references by path for cleanup
+- **_subscriptions**: Tracks active stream subscriptions by path
+- **_groups**: Maps group names to sets of reference paths
+
+<Info>
+Subscriptions are keyed by `reference.path`, so listening to the same reference multiple times will replace the previous subscription.
+</Info>
+
+## Best Practices
+
+### Use State/ChangeNotifier Variants
+
+<Tabs>
+  <Tab title="Recommended">
+    ```dart
+    // Automatic cleanup
+    class MyWidget extends State<Widget> with FListenerStateMixin<Widget> {
+      @override
+      void initState() {
+        super.initState();
+        listenF(fsm.doc('users/123'), (snapshot) {});
+      }
+      // dispose() handled automatically
+    }
+    ```
+  </Tab>
+
+  <Tab title="Not Recommended">
+    ```dart
+    // Manual cleanup required - easy to forget!
+    class MyWidget extends State<Widget> with FListenerMixin {
+      @override
+      void initState() {
+        super.initState();
+        listenF(fsm.doc('users/123'), (snapshot) {});
+      }
+
+      @override
+      void dispose() {
+        closeF(); // Must remember to call this
+        super.dispose();
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Handle Errors
+
+Always provide an `onError` callback for production code:
+
+```dart
+listenF(
+  fsm.doc('users/$userId'),
+  (snapshot) => handleData(snapshot),
+  onError: (error) {
+    logger.error('Subscription error', error);
+    showErrorToUser(error);
+  },
+);
+```
+
+### Use Groups for Complex UIs
+
+Group related subscriptions for easier management:
+
+```dart
+// Group by feature
+listenF(fsm.doc('data/1'), handler, name: 'feature-a');
+listenF(fsm.doc('data/2'), handler, name: 'feature-b');
+
+// Close specific feature
+closeFGroup('feature-a');
+```
+
+### Avoid Duplicate Subscriptions
+
+<Warning>
+Listening to the same reference path twice will cancel the previous subscription:
+
+```dart
+// First subscription
+listenF(fsm.doc('users/123'), (snapshot) => print('A'));
+
+// This cancels the first subscription
+listenF(fsm.doc('users/123'), (snapshot) => print('B'));
+
+// Only 'B' will be called
+```
+</Warning>
+
+If you need multiple handlers for the same reference, use groups or handle multiple operations in a single callback.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="FStreamSubscriber Mixins" icon="tower-broadcast" href="/mixins/fstreamsubscriber">
+    Generic stream subscription mixins for any Dart stream
+  </Card>
+  <Card title="Listener Mixins Overview" icon="list" href="/mixins/overview">
+    Overview of all listener mixin families
+  </Card>
+</CardGroup>

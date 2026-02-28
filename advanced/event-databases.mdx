@@ -1,0 +1,238 @@
+---
+title: Event Databases
+description: Use event databases for ephemeral signaling and temporary state management
+---
+
+## Overview
+
+Event databases provide a separate namespace for ephemeral signaling and temporary state that doesn't belong in your main database. This is useful for transient events, UI notifications, or real-time coordination between components.
+
+## Default Event Database Name
+
+FSM uses a default event database name to keep paths concise:
+
+```dart
+// From f_wrapper.dart:50
+static const String defaultEventDatabaseName = 'e';
+```
+
+This means event databases are stored under the `'e'` namespace by default.
+
+## Basic Usage
+
+### Accessing the Default Event Database
+
+```dart
+// Uses default name 'e'
+final eventRef = F.instance
+    .eventDatabase()
+    .doc('notifications/user123');
+
+await eventRef.setData({
+  'message': 'New friend request',
+  'type': 'social',
+});
+```
+
+### Using a Custom Event Database
+
+```dart
+// Use a custom event database name
+final customEventRef = F.instance
+    .eventDatabase('realtime_events')
+    .doc('games/lobby_1');
+
+await customEventRef.setData({
+  'playerJoined': 'player456',
+  'timestamp': DateTime.now().millisecondsSinceEpoch,
+});
+```
+
+## Implementation Details
+
+From `f_wrapper.dart:85-94`:
+
+```dart
+FirestoreEventDatabaseReference eventDatabase([String? database]) {
+  if (database != null) {
+    assert(database.isNotEmpty, 'Database name cannot be empty.');
+    pathDelegate.eventDatabase = database;
+  } else {
+    pathDelegate.eventDatabase = defaultEventDatabaseName;
+  }
+  print('Inline: ${pathDelegate.path}');
+  return FirestoreEventDatabaseReference._(pathDelegate, this);
+}
+```
+
+## Path Structure
+
+Event databases are combined with regular databases to form compound paths:
+
+```dart
+// From f_wrapper.dart:7-9
+String get databasePath => [database, eventDatabase]
+    .where((element) => element.isNotEmpty)
+    .join('/');
+```
+
+**Examples:**
+- Default database + event database: `"default/e"`
+- Custom database + event database: `"myapp/e"`
+- Custom both: `"production/notifications"`
+
+## Use Cases
+
+### 1. UI Notifications
+
+Show temporary notifications that don't need to persist:
+
+```dart
+class NotificationService {
+  final _notificationRef = F.instance
+      .eventDatabase()
+      .doc('ui/notifications');
+
+  void showNotification(String message, String type) {
+    _notificationRef.value('current').setData({
+      'message': message,
+      'type': type,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Stream<dynamic> get notifications => 
+      _notificationRef.value('current').values();
+}
+```
+
+### 2. Real-time Coordination
+
+Coordinate actions between different parts of your app:
+
+```dart
+class GameLobby {
+  final String lobbyId;
+  late final DocumentReferenceWrapper _lobbyRef;
+
+  GameLobby(this.lobbyId) {
+    _lobbyRef = F.instance
+        .eventDatabase('game_events')
+        .doc('lobbies/$lobbyId');
+  }
+
+  // Signal when a player is ready
+  void markReady(String playerId) {
+    _lobbyRef.value('ready/$playerId').setData(true);
+  }
+
+  // Listen for all players ready
+  Stream<bool> get allPlayersReady => _lobbyRef
+      .snapshots()
+      .map((snap) {
+        final ready = snap.value('ready') as Map?;
+        if (ready == null) return false;
+        return ready.values.every((r) => r == true);
+      });
+}
+```
+
+### 3. Ephemeral State
+
+Track temporary state that shouldn't clutter your main database:
+
+```dart
+class TypingIndicator {
+  final String chatId;
+  late final ValueReferenceWrapper _typingRef;
+
+  TypingIndicator(this.chatId) {
+    _typingRef = F.instance
+        .eventDatabase()
+        .doc('chats/$chatId')
+        .value('typing');
+  }
+
+  void setTyping(String userId, bool isTyping) {
+    _typingRef.value(userId).setData(isTyping);
+  }
+
+  Stream<Map<String, bool>> get whoIsTyping => _typingRef
+      .values()
+      .map((data) => Map<String, bool>.from(data ?? {}));
+}
+```
+
+### 4. Session Management
+
+Manage user sessions separately from user data:
+
+```dart
+class SessionManager {
+  final String userId;
+  late final DocumentReferenceWrapper _sessionRef;
+
+  SessionManager(this.userId) {
+    _sessionRef = F.instance
+        .eventDatabase('sessions')
+        .doc('users/$userId');
+  }
+
+  Future<void> startSession() async {
+    await _sessionRef.setData({
+      'active': true,
+      'startTime': DateTime.now().toIso8601String(),
+      'lastActivity': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<void> updateActivity() async {
+    await _sessionRef.value('lastActivity').setData(
+      DateTime.now().toIso8601String(),
+    );
+  }
+
+  Future<void> endSession() async {
+    await _sessionRef.setData({
+      'active': false,
+      'endTime': DateTime.now().toIso8601String(),
+    }, merge: true);
+  }
+}
+```
+
+## Combining with Regular Databases
+
+You can chain event databases with custom databases:
+
+```dart
+// Main app database with event database
+final ref = F.instance
+    .database('production')
+    .eventDatabase()  // Uses 'e'
+    .doc('alerts/system');
+
+// Path will be: "production/e/alerts/system"
+```
+
+<Note>
+Event databases share the same API as regular databases. The only difference is the namespace they use for organizing data.
+</Note>
+
+<Tip>
+Use event databases for data that:
+- Is temporary or ephemeral
+- Needs real-time updates but shouldn't persist long-term
+- Coordinates UI state across components
+- Represents transient events or signals
+</Tip>
+
+<Warning>
+Event databases are still stored in memory like regular databases. For truly transient data, consider combining with lifecycle management to clean up old events.
+</Warning>
+
+## Related
+
+- [Notifications](/advanced/notifications) - Signal changes without data updates
+- [Global Observer](/advanced/global-observer) - Debug all database changes
+- [Databases](/concepts/databases) - Learn about database organization

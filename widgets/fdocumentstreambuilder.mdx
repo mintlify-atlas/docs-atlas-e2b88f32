@@ -1,0 +1,200 @@
+---
+title: 'FDocumentStreamBuilder'
+description: 'A widget that builds itself based on document snapshots with optional data mapping'
+---
+
+## Overview
+
+`FDocumentStreamBuilder` is a specialized widget for listening to FSM document changes. It provides automatic stream lifecycle management and supports optional data transformation through mapping functions.
+
+## Type Signature
+
+```dart
+class FDocumentStreamBuilder<T> extends StatefulWidget {
+  final String document;
+  final dynamic initialData;
+  final FunctionMap<dynamic>? map;
+  final StreamWidgetBuilder<T> builder;
+  final String? database;
+
+  const FDocumentStreamBuilder({
+    super.key,
+    required this.document,
+    required this.builder,
+    this.database,
+    this.initialData,
+    this.map,
+  });
+}
+```
+
+## Type Definitions
+
+```dart
+typedef StreamWidgetBuilder<T> = Widget Function(BuildContext context, T value);
+typedef FunctionMap<T> = T Function(T value);
+```
+
+## Parameters
+
+<ParamField path="document" type="String" required>
+  The document path in format `collection/document`. For example: `'home/counter'` or `'users/user123'`.
+</ParamField>
+
+<ParamField path="builder" type="StreamWidgetBuilder<T>" required>
+  A function that builds a widget based on the current document data. Receives `BuildContext` and the typed value `T`.
+</ParamField>
+
+<ParamField path="database" type="String?">
+  Optional database name to use. If not specified, uses the default database instance.
+</ParamField>
+
+<ParamField path="initialData" type="dynamic">
+  Initial data to display before the first snapshot arrives. Defaults to null.
+</ParamField>
+
+<ParamField path="map" type="FunctionMap<dynamic>?">
+  Optional mapping function to transform document data before passing to the builder. Useful for converting raw data to model objects.
+</ParamField>
+
+## Usage Example
+
+```dart
+FDocumentStreamBuilder<int>(
+  document: 'home/counter',
+  initialData: 0,
+  builder: (context, value) {
+    return Text(value.toString());
+  },
+)
+```
+
+## How It Works
+
+<Note>
+  `FDocumentStreamBuilder` automatically manages the document stream lifecycle. The stream is created on initialization and properly closed when the widget is disposed.
+</Note>
+
+1. **Initialization**: Creates a snapshot stream for the specified document path
+2. **Stream Management**: Subscribes to `F.instance.database(database).doc(document).snapshots()`
+3. **Data Extraction**: Extracts data from `DocumentSnapshotWrapper.data`
+4. **Optional Mapping**: If a `map` function is provided, transforms the data before passing to builder
+5. **Rebuilding**: Calls builder with the (optionally mapped) value whenever data changes
+6. **Disposal**: Automatically closes the document stream when widget is disposed
+
+## Document Path Format
+
+<Tip>
+  Document paths should follow the format `'collection/document'`:
+  - `'users/alice'` - Document 'alice' in 'users' collection
+  - `'posts/post123'` - Document 'post123' in 'posts' collection
+  - `'settings/app'` - Document 'app' in 'settings' collection
+</Tip>
+
+## Using the Map Function
+
+The `map` parameter allows you to transform raw document data into typed model objects:
+
+```dart
+class User {
+  final String name;
+  final int age;
+
+  User({required this.name, required this.age});
+
+  factory User.fromMap(Map<String, dynamic> map) {
+    return User(
+      name: map['name'] ?? '',
+      age: map['age'] ?? 0,
+    );
+  }
+}
+
+FDocumentStreamBuilder<User>(
+  document: 'users/alice',
+  map: (data) => User.fromMap(data as Map<String, dynamic>),
+  builder: (context, user) {
+    return Text('${user.name}, Age: ${user.age}');
+  },
+)
+```
+
+## Working with DocumentSnapshotWrapper
+
+<Note>
+  If you need access to the full `DocumentSnapshotWrapper` instead of just the data, specify `DocumentSnapshotWrapper` as the type parameter. The widget will pass the snapshot directly without extracting data.
+</Note>
+
+```dart
+FDocumentStreamBuilder<DocumentSnapshotWrapper>(
+  document: 'home/counter',
+  builder: (context, snapshot) {
+    if (snapshot == null) {
+      return Text('No data');
+    }
+    return Text('Data: ${snapshot.data}');
+  },
+)
+```
+
+## Lifecycle Management
+
+<Warning>
+  The document stream is automatically closed in the `dispose()` method. You don't need to manually manage stream subscriptions or cleanup.
+</Warning>
+
+The widget handles the complete lifecycle:
+
+1. **initState**: Creates and subscribes to document stream
+2. **build**: Rebuilds when document data changes
+3. **dispose**: Closes the document stream via `F.instance.database(database).doc(document).close()`
+
+## Database Selection
+
+You can specify which database instance to use:
+
+```dart
+FDocumentStreamBuilder<Map<String, dynamic>>(
+  document: 'settings/theme',
+  database: 'userPreferences',
+  builder: (context, settings) {
+    return Text('Theme: ${settings['mode']}');
+  },
+)
+```
+
+## Complete Example
+
+```dart
+class UserProfile extends StatelessWidget {
+  final String userId;
+
+  const UserProfile({required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    return FDocumentStreamBuilder<Map<String, dynamic>>(
+      document: 'users/$userId',
+      initialData: {'name': 'Loading...', 'status': 'offline'},
+      map: (data) {
+        // Add computed fields
+        return {
+          ...data,
+          'displayName': data['name']?.toUpperCase() ?? 'Unknown',
+        };
+      },
+      builder: (context, userData) {
+        return Card(
+          child: ListTile(
+            title: Text(userData['displayName']),
+            subtitle: Text('Status: ${userData['status']}'),
+            leading: CircleAvatar(
+              child: Text(userData['displayName'][0]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+```

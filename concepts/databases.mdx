@@ -1,0 +1,214 @@
+---
+title: 'Databases'
+description: 'Understand database references and multi-database support in FSM'
+---
+
+## Overview
+
+Databases are the root-level containers in FSM's hierarchy. They provide logical separation for different data domains within your application.
+
+## FirestoreDatabaseReference
+
+The `FirestoreDatabaseReference` class represents a reference to a database and provides methods to access collections and documents within that database.
+
+### API Signature
+
+```dart
+class FirestoreDatabaseReference {
+  CollectionReferenceWrapper collection(String path);
+  DocumentReferenceWrapper doc(String path);
+  FirestoreEventDatabaseReference eventDatabase([String? database]);
+}
+```
+
+## Accessing Databases
+
+### Default Database
+
+Every FSM instance starts with a default database named `'default'`:
+
+```dart
+// Access the default database
+final db = F.instance.database();
+
+// Access collections in the default database
+F.instance.collection('users').doc('user123');
+```
+
+### Named Databases
+
+You can create multiple databases for logical separation:
+
+```dart
+// Access a specific database
+final appDb = F.instance.database('app_data');
+final cacheDb = F.instance.database('cache');
+
+// Use the database reference
+appDb.collection('users').doc('user123').setData({'name': 'Alice'});
+cacheDb.collection('api_responses').doc('req1').setData({'data': {...}});
+```
+
+<Tip>
+  Use separate databases to isolate different types of data, making it easier to manage, clear, or export specific data domains.
+</Tip>
+
+## Event Database
+
+FSM provides a special event database for ephemeral, event-driven state:
+
+```dart
+// Access the default event database (named 'e')
+final eventDb = F.instance.eventDatabase();
+
+// Access a custom event database
+final customEventDb = F.instance.eventDatabase('notifications');
+
+// Use for temporary events
+eventDb.collection('ui_events').doc('modal_open').setData(true);
+```
+
+<Note>
+  Event databases are perfect for transient UI state, one-time notifications, or temporary coordination between widgets.
+</Note>
+
+## Database Method
+
+### Method Signature
+
+```dart
+FirestoreDatabaseReference database([String? database])
+```
+
+**Parameters:**
+- `database` (optional): The name of the database. If omitted, uses `'default'`.
+
+**Returns:** A `FirestoreDatabaseReference` instance.
+
+**Assertions:**
+- Database name cannot be empty if provided
+
+### Example Usage
+
+```dart
+// Default database
+final defaultDb = F.instance.database();
+
+// Named database
+final userDb = F.instance.database('user_data');
+final analyticsDb = F.instance.database('analytics');
+
+// Chain to collections
+userDb
+  .collection('profiles')
+  .doc('profile123')
+  .setData({'bio': 'Flutter developer'});
+```
+
+## Use Cases
+
+### 1. Feature Isolation
+
+Separate data by feature domain:
+
+```dart
+class AppDatabases {
+  static final auth = F.instance.database('auth');
+  static final content = F.instance.database('content');
+  static final settings = F.instance.database('settings');
+}
+
+// In your auth service
+AppDatabases.auth
+  .collection('sessions')
+  .doc(userId)
+  .setData(sessionData);
+
+// In your content service
+AppDatabases.content
+  .collection('articles')
+  .doc(articleId)
+  .setData(articleData);
+```
+
+### 2. Cache Management
+
+Separate cached data for easy clearing:
+
+```dart
+final cacheDb = F.instance.database('cache');
+
+// Store cached API responses
+cacheDb.collection('api').doc('user_list').setData(response);
+
+// Clear all cache by destroying streams
+// (In production, you'd implement a proper cache clearing mechanism)
+```
+
+### 3. Testing Isolation
+
+Use separate databases for test data:
+
+```dart
+final testDb = F.instance.database('test_${DateTime.now().millisecondsSinceEpoch}');
+
+testDb.collection('users').doc('test_user').setData({'name': 'Test'});
+
+// Clean up after tests
+// Streams associated with testDb can be closed independently
+```
+
+## Path Structure
+
+Databases form the first part of FSM's path hierarchy:
+
+```
+[database]/[collection]/[document]/[value]
+```
+
+Example paths:
+```
+default/users/user123
+app_data/posts/post456/comments/comment789
+e/ui_events/modal_state
+```
+
+<Accordion title="Understanding Database Paths">
+  The `PathDelegate` class internally manages the database path:
+  
+  ```dart
+  class PathDelegate {
+    String database = 'default';
+    String eventDatabase = '';
+    
+    String get databasePath => [database, eventDatabase]
+        .where((element) => element.isNotEmpty)
+        .join('/');
+  }
+  ```
+  
+  This allows FSM to construct full paths for stream management and data storage.
+</Accordion>
+
+## Best Practices
+
+1. **Use the default database for most data**: Don't over-engineer with multiple databases unless you have a clear separation need.
+
+2. **Name databases descriptively**: Use clear names like `'cache'`, `'offline_queue'`, or `'temp_data'`.
+
+3. **Document your database strategy**: If using multiple databases, document what each database contains.
+
+4. **Consider database as a namespace**: Think of databases as top-level namespaces for organizing your app's state.
+
+5. **Use event databases for ephemeral state**: Leverage event databases for temporary UI state or one-time events.
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Collections" icon="folder" href="/concepts/collections">
+    Learn how to organize documents within databases
+  </Card>
+  <Card title="Documents" icon="file" href="/concepts/documents">
+    Understand document references and operations
+  </Card>
+</CardGroup>

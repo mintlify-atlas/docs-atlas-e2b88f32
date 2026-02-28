@@ -1,0 +1,336 @@
+---
+title: "DocumentReferenceWrapper"
+description: "Reference to an FSM document with read, write, and stream methods"
+---
+
+## Overview
+
+The `DocumentReferenceWrapper` class represents a reference to a document in FSM. It provides methods to read, write, update, and listen to document changes.
+
+## Properties
+
+<ResponseField name="path" type="String">
+  The full path of the document including database path.
+  
+  ```dart
+  final doc = F.instance.database().doc('users/user123');
+  print(doc.path); // 'default/users/user123'
+  ```
+</ResponseField>
+
+<ResponseField name="documentPath" type="String">
+  The document path portion without the database prefix.
+  
+  ```dart
+  print(doc.documentPath); // 'users/user123'
+  ```
+</ResponseField>
+
+<ResponseField name="documentID" type="String">
+  The document identifier (last component of the path).
+  
+  ```dart
+  print(doc.documentID); // 'user123'
+  ```
+</ResponseField>
+
+<ResponseField name="snapshot" type="DocumentSnapshotWrapper">
+  The current snapshot of the document. Returns an empty snapshot if the document doesn't exist.
+  
+  ```dart
+  final currentData = doc.snapshot.data;
+  ```
+</ResponseField>
+
+<ResponseField name="streamController" type="BehaviorSubject<DocumentSnapshotWrapper>">
+  The underlying RxDart BehaviorSubject that manages the document's stream.
+  
+  ```dart
+  final controller = doc.streamController;
+  ```
+</ResponseField>
+
+## Methods
+
+### setData
+
+<ParamField path="data" type="dynamic" required>
+  The data to set on the document. Can be any type (Map, List, primitive).
+</ParamField>
+
+<ParamField path="merge" type="bool" default="false">
+  If true, merges the data with existing document data instead of overwriting.
+</ParamField>
+
+<ParamField path="notify" type="bool" default="false">
+  If true, notifies listeners even if data hasn't changed. If data is null with notify true, only signals listeners without changing data.
+</ParamField>
+
+Writes data to the document.
+
+```dart
+Future<void> setData(
+  dynamic data, {
+  bool merge = false,
+  bool notify = false,
+})
+```
+
+**Example:**
+
+```dart
+// Overwrite document
+await doc.setData({
+  'name': 'John Doe',
+  'email': 'john@example.com',
+});
+
+// Merge with existing data
+await doc.setData(
+  {'lastLogin': DateTime.now()},
+  merge: true,
+);
+
+// Notify listeners without changing data
+await doc.setData(null, notify: true);
+```
+
+### updateData
+
+<ParamField path="data" type="dynamic" required>
+  The data to update. Merges with existing document data.
+</ParamField>
+
+<ParamField path="notify" type="bool" default="false">
+  If true, notifies listeners even if data hasn't changed.
+</ParamField>
+
+Updates the document data by merging with existing values. Only updates if the document exists.
+
+```dart
+Future<void> updateData(dynamic data, {bool notify = false})
+```
+
+**Example:**
+
+```dart
+await doc.updateData({
+  'lastModified': DateTime.now(),
+  'status': 'active',
+});
+```
+
+### notify
+
+Notifies all listeners without changing the document data. Useful for triggering UI updates.
+
+```dart
+void notify()
+```
+
+**Example:**
+
+```dart
+// Trigger listeners to re-render
+doc.notify();
+```
+
+### get
+
+Retrieves the current document snapshot asynchronously.
+
+```dart
+Future<DocumentSnapshotWrapper> get()
+```
+
+**Returns:** A `Future` that resolves to a `DocumentSnapshotWrapper`.
+
+**Example:**
+
+```dart
+final snapshot = await doc.get();
+if (snapshot.exists) {
+  print('Data: ${snapshot.data}');
+}
+```
+
+### snapshots
+
+<ParamField path="includeMetadataChanges" type="bool" default="false">
+  Whether to include metadata changes in the stream.
+</ParamField>
+
+Returns a stream of document changes.
+
+```dart
+Stream<DocumentSnapshotWrapper> snapshots({
+  bool includeMetadataChanges = false,
+})
+```
+
+**Returns:** A `Stream` that emits `DocumentSnapshotWrapper` whenever the document changes.
+
+**Example:**
+
+```dart
+doc.snapshots().listen((snapshot) {
+  if (snapshot.exists) {
+    print('Document updated: ${snapshot.data}');
+  }
+});
+```
+
+### collection
+
+<ParamField path="path" type="String" required>
+  The subcollection path. Must not be empty.
+</ParamField>
+
+Returns a reference to a subcollection under this document.
+
+```dart
+CollectionReferenceWrapper collection(String path)
+```
+
+**Example:**
+
+```dart
+final settings = doc.collection('settings');
+final preferences = doc.collection('preferences');
+```
+
+### value
+
+<ParamField path="path" type="String" required>
+  The path to a nested value within the document. Use '/' to separate nested keys.
+</ParamField>
+
+Returns a reference to a specific value within the document.
+
+```dart
+ValueReferenceWrapper value(String path)
+```
+
+**Example:**
+
+```dart
+// Reference a nested value
+final emailValue = doc.value('profile/email');
+
+// Reference a top-level value
+final nameValue = doc.value('name');
+```
+
+### parent
+
+Returns the parent collection reference.
+
+```dart
+CollectionReferenceWrapper parent()
+```
+
+**Returns:** The parent `CollectionReferenceWrapper`.
+
+**Example:**
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+final usersCollection = doc.parent();
+print(usersCollection.collectionID); // 'users'
+```
+
+### close
+
+Closes the document stream if there are no active listeners.
+
+```dart
+void close()
+```
+
+**Example:**
+
+```dart
+doc.close();
+```
+
+## Usage Examples
+
+### Reading Documents
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// One-time read
+final snapshot = await doc.get();
+if (snapshot.exists) {
+  print('Name: ${snapshot.data['name']}');
+}
+
+// Real-time listener
+doc.snapshots().listen((snapshot) {
+  if (snapshot.exists) {
+    print('Updated name: ${snapshot.data['name']}');
+  }
+});
+```
+
+### Writing Documents
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// Set complete document
+await doc.setData({
+  'name': 'John Doe',
+  'email': 'john@example.com',
+  'age': 30,
+});
+
+// Merge partial update
+await doc.setData(
+  {'lastLogin': DateTime.now()},
+  merge: true,
+);
+
+// Update existing document
+await doc.updateData({
+  'status': 'active',
+  'modifiedAt': DateTime.now(),
+});
+```
+
+### Working with Nested Data
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// Set nested value
+final emailRef = doc.value('profile/email');
+await emailRef.setData('newemail@example.com');
+
+// Access subcollections
+final settings = doc.collection('settings');
+await settings.doc('preferences').setData({
+  'theme': 'dark',
+  'notifications': true,
+});
+```
+
+### Reactive UI Updates
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// In a Flutter widget
+StreamBuilder<DocumentSnapshotWrapper>(
+  stream: doc.snapshots(),
+  builder: (context, snapshot) {
+    if (!snapshot.hasData || !snapshot.data!.exists) {
+      return Text('No data');
+    }
+    
+    final data = snapshot.data!.data;
+    return Text('Name: ${data['name']}');
+  },
+)
+```

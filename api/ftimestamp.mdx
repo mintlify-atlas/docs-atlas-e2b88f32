@@ -1,0 +1,405 @@
+---
+title: FTimestamp
+description: Timestamp implementation for FSM with nanosecond precision
+---
+
+## Overview
+
+The `FTimestamp` class represents a point in time independent of any time zone or calendar. It's encoded as seconds and nanoseconds at nanosecond resolution in UTC Epoch time, using the Proleptic Gregorian Calendar.
+
+**Range:** `0001-01-01T00:00:00Z` to `9999-12-31T23:59:59.999999999Z`
+
+This implementation is based on the [Protocol Buffers timestamp definition](https://github.com/google/protobuf/blob/master/src/google/protobuf/timestamp.proto).
+
+## Class Definition
+
+```dart
+class FTimestamp implements Comparable<FTimestamp> {
+  FTimestamp(this._seconds, this._nanoseconds);
+  
+  final int _seconds;
+  final int _nanoseconds;
+}
+```
+
+## Constructors
+
+### FTimestamp()
+
+Creates a timestamp from seconds and nanoseconds.
+
+```dart
+FTimestamp(int seconds, int nanoseconds)
+```
+
+**Parameters:**
+- `seconds` (int): Seconds since Unix epoch (must be between -62135596800 and 253402300800)
+- `nanoseconds` (int): Nanoseconds component (must be between 0 and 999999999)
+
+**Example:**
+```dart
+final timestamp = FTimestamp(1609459200, 500000000);
+```
+
+### FTimestamp.now()
+
+Creates a timestamp representing the current moment.
+
+```dart
+factory FTimestamp.now()
+```
+
+**Returns:** FTimestamp with the current date and time
+
+**Example:**
+```dart
+final now = FTimestamp.now();
+print('Current time: ${now.toDate()}');
+```
+
+### FTimestamp.fromDate()
+
+Creates a timestamp from a DateTime object.
+
+```dart
+factory FTimestamp.fromDate(DateTime date)
+```
+
+**Parameters:**
+- `date` (DateTime): The DateTime to convert
+
+**Returns:** FTimestamp representing the same point in time
+
+**Example:**
+```dart
+final date = DateTime(2024, 1, 15, 10, 30);
+final timestamp = FTimestamp.fromDate(date);
+print('Timestamp: $timestamp');
+```
+
+### FTimestamp.fromMillisecondsSinceEpoch()
+
+Creates a timestamp from milliseconds since epoch.
+
+```dart
+factory FTimestamp.fromMillisecondsSinceEpoch(int milliseconds)
+```
+
+**Parameters:**
+- `milliseconds` (int): Milliseconds since Unix epoch
+
+**Returns:** FTimestamp representing that point in time
+
+**Example:**
+```dart
+final timestamp = FTimestamp.fromMillisecondsSinceEpoch(1609459200000);
+print('Date: ${timestamp.toDate()}');
+```
+
+### FTimestamp.fromMicrosecondsSinceEpoch()
+
+Creates a timestamp from microseconds since epoch.
+
+```dart
+factory FTimestamp.fromMicrosecondsSinceEpoch(int microseconds)
+```
+
+**Parameters:**
+- `microseconds` (int): Microseconds since Unix epoch
+
+**Returns:** FTimestamp representing that point in time
+
+**Example:**
+```dart
+final timestamp = FTimestamp.fromMicrosecondsSinceEpoch(1609459200000000);
+print('Date: ${timestamp.toDate()}');
+```
+
+## Properties
+
+<ResponseField name="seconds" type="int">
+  The seconds component of the timestamp since Unix epoch.
+</ResponseField>
+
+<ResponseField name="nanoseconds" type="int">
+  The nanoseconds component (0-999999999).
+</ResponseField>
+
+<ResponseField name="millisecondsSinceEpoch" type="int">
+  The timestamp in milliseconds since Unix epoch.
+</ResponseField>
+
+<ResponseField name="microsecondsSinceEpoch" type="int">
+  The timestamp in microseconds since Unix epoch.
+</ResponseField>
+
+## Methods
+
+### toDate()
+
+Converts the timestamp to a DateTime object.
+
+```dart
+DateTime toDate()
+```
+
+**Returns:** DateTime representation of the timestamp
+
+**Example:**
+```dart
+final timestamp = FTimestamp.now();
+final dateTime = timestamp.toDate();
+print('Year: ${dateTime.year}');
+print('Month: ${dateTime.month}');
+print('Day: ${dateTime.day}');
+```
+
+### compareTo()
+
+Compares this timestamp with another.
+
+```dart
+int compareTo(FTimestamp other)
+```
+
+**Parameters:**
+- `other` (FTimestamp): The timestamp to compare with
+
+**Returns:** 
+- Negative value if this timestamp is before `other`
+- Zero if timestamps are equal
+- Positive value if this timestamp is after `other`
+
+**Example:**
+```dart
+final timestamp1 = FTimestamp.fromDate(DateTime(2024, 1, 1));
+final timestamp2 = FTimestamp.fromDate(DateTime(2024, 12, 31));
+
+if (timestamp1.compareTo(timestamp2) < 0) {
+  print('timestamp1 is earlier than timestamp2');
+}
+```
+
+### toString()
+
+Converts the timestamp to a string representation.
+
+```dart
+String toString()
+```
+
+**Returns:** String in format `Timestamp(seconds=X, nanoseconds=Y)`
+
+**Example:**
+```dart
+final timestamp = FTimestamp.now();
+print(timestamp);
+// Output: Timestamp(seconds=1609459200, nanoseconds=500000000)
+```
+
+## Operators
+
+### Equality (==)
+
+Compares two timestamps for equality.
+
+```dart
+bool operator ==(dynamic other)
+```
+
+**Example:**
+```dart
+final timestamp1 = FTimestamp.now();
+final timestamp2 = FTimestamp.fromDate(timestamp1.toDate());
+
+if (timestamp1 == timestamp2) {
+  print('Timestamps are equal');
+}
+```
+
+## Usage Examples
+
+### Getting Current Time
+
+```dart
+// Create a timestamp for the current moment
+final now = FTimestamp.now();
+print('Current timestamp: $now');
+print('As DateTime: ${now.toDate()}');
+print('Milliseconds: ${now.millisecondsSinceEpoch}');
+```
+
+### Converting Between Formats
+
+```dart
+// From DateTime
+final dateTime = DateTime(2024, 6, 15, 14, 30);
+final fromDate = FTimestamp.fromDate(dateTime);
+
+// From milliseconds
+final fromMillis = FTimestamp.fromMillisecondsSinceEpoch(1718461800000);
+
+// From microseconds
+final fromMicros = FTimestamp.fromMicrosecondsSinceEpoch(1718461800000000);
+
+// Convert back to DateTime
+final backToDateTime = fromDate.toDate();
+print('Year: ${backToDateTime.year}');
+print('Month: ${backToDateTime.month}');
+print('Day: ${backToDateTime.day}');
+```
+
+### Storing Timestamps in Documents
+
+```dart
+// Store current timestamp
+await F.instance.doc('events/event1').setData({
+  'name': 'Conference',
+  'createdAt': FTimestamp.now(),
+  'startDate': FTimestamp.fromDate(DateTime(2024, 12, 1)),
+});
+
+// Retrieve and use timestamp
+final snapshot = await F.instance.doc('events/event1').get();
+if (snapshot.exists) {
+  final createdAt = snapshot['createdAt'] as FTimestamp;
+  print('Event created: ${createdAt.toDate()}');
+}
+```
+
+### Comparing Timestamps
+
+```dart
+final timestamp1 = FTimestamp.fromDate(DateTime(2024, 1, 1));
+final timestamp2 = FTimestamp.fromDate(DateTime(2024, 6, 15));
+final timestamp3 = FTimestamp.now();
+
+// Using compareTo
+if (timestamp1.compareTo(timestamp2) < 0) {
+  print('timestamp1 is before timestamp2');
+}
+
+// Using equality
+if (timestamp1 == timestamp2) {
+  print('Timestamps are equal');
+}
+
+// Sort timestamps
+final timestamps = [timestamp3, timestamp1, timestamp2];
+timestamps.sort((a, b) => a.compareTo(b));
+print('Sorted: ${timestamps.map((t) => t.toDate())}');
+```
+
+### Calculating Time Differences
+
+```dart
+final startTime = FTimestamp.now();
+
+// Perform some operation
+await Future.delayed(Duration(seconds: 2));
+
+final endTime = FTimestamp.now();
+
+// Calculate difference in milliseconds
+final diffMs = endTime.millisecondsSinceEpoch - startTime.millisecondsSinceEpoch;
+print('Operation took $diffMs milliseconds');
+
+// Calculate difference in microseconds for higher precision
+final diffUs = endTime.microsecondsSinceEpoch - startTime.microsecondsSinceEpoch;
+print('Operation took $diffUs microseconds');
+```
+
+### Tracking Document Updates
+
+```dart
+// Update a document with timestamp
+await F.instance.doc('users/user1').updateData({
+  'lastModified': FTimestamp.now(),
+  'status': 'active',
+});
+
+// Listen for updates and track timing
+F.instance.doc('users/user1').snapshots().listen((snapshot) {
+  if (snapshot.exists && snapshot.documentEvent != null) {
+    final timestamp = snapshot.documentEvent!.timestamp;
+    final dateTime = timestamp.toDate();
+    
+    print('Document updated at: $dateTime');
+    print('Seconds since epoch: ${timestamp.seconds}');
+    print('Nanoseconds: ${timestamp.nanoseconds}');
+  }
+});
+```
+
+### Working with Historical Data
+
+```dart
+// Create timestamps for historical records
+final records = [
+  {
+    'event': 'User Signup',
+    'timestamp': FTimestamp.fromDate(DateTime(2024, 1, 15)),
+  },
+  {
+    'event': 'First Purchase',
+    'timestamp': FTimestamp.fromDate(DateTime(2024, 2, 20)),
+  },
+  {
+    'event': 'Premium Upgrade',
+    'timestamp': FTimestamp.fromDate(DateTime(2024, 3, 10)),
+  },
+];
+
+// Store in FSM
+for (var i = 0; i < records.length; i++) {
+  await F.instance.doc('userHistory/record$i').setData(records[i]);
+}
+
+// Query and process chronologically
+final snapshot = await F.instance.doc('userHistory/record0').get();
+if (snapshot.exists) {
+  final ts = snapshot['timestamp'] as FTimestamp;
+  print('First event: ${snapshot['event']} on ${ts.toDate()}');
+}
+```
+
+### Precision Comparison
+
+```dart
+// FTimestamp provides nanosecond precision
+final timestamp = FTimestamp.now();
+
+print('Seconds: ${timestamp.seconds}');
+print('Nanoseconds: ${timestamp.nanoseconds}');
+print('Milliseconds: ${timestamp.millisecondsSinceEpoch}');
+print('Microseconds: ${timestamp.microsecondsSinceEpoch}');
+
+// DateTime only has microsecond precision
+final dateTime = timestamp.toDate();
+print('DateTime microseconds: ${dateTime.microsecondsSinceEpoch}');
+```
+
+## Range Validation
+
+FTimestamp validates that seconds and nanoseconds are within acceptable ranges:
+
+- **Nanoseconds:** 0 to 999,999,999
+- **Seconds:** -62,135,596,800 (year 0001) to 253,402,300,800 (year 9999)
+
+Invalid values will throw an `ArgumentError`:
+
+```dart
+try {
+  // This will throw an error
+  final invalid = FTimestamp(999999999999999, 0);
+} catch (e) {
+  print('Error: $e');
+  // Output: ArgumentError: Timestamp seconds out of range: ...
+}
+```
+
+## See Also
+
+- [DocumentEvent](/api/document-event) - Uses FTimestamp for event timing
+- [DocumentSnapshotWrapper](/api/document-snapshot) - Contains document events with timestamps
+- [DateTime](https://api.dart.dev/stable/dart-core/DateTime-class.html) - Dart's built-in DateTime class

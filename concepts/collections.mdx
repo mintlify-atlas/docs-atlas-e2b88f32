@@ -1,0 +1,355 @@
+---
+title: 'Collections'
+description: 'Learn about collection references and document organization in FSM'
+---
+
+## Overview
+
+Collections are groups of documents that typically share a similar data structure. They provide a way to organize related documents and enable streaming of document changes.
+
+## CollectionReferenceWrapper
+
+The `CollectionReferenceWrapper` class represents a reference to a collection and provides methods to access and manipulate documents within that collection.
+
+### API Signature
+
+```dart
+class CollectionReferenceWrapper extends ReferenceWrapper {
+  // Properties
+  String? get id;
+  String get collectionPath;
+  String get collectionID;
+  String get path;
+  BehaviorSubject<DocumentReferenceWrapper> get streamController;
+  
+  // Methods
+  DocumentReferenceWrapper doc([String? path]);
+  Future<DocumentReferenceWrapper> add(dynamic data, {bool merge = false});
+  Future<DocumentReferenceWrapper> getDocuments();
+  Stream<DocumentReferenceWrapper> snapshots({bool includeMetadataChanges = false});
+  DocumentReferenceWrapper? parent();
+  void close();
+}
+```
+
+## Creating Collection References
+
+### From F Instance
+
+```dart
+// Create a collection reference
+final usersCollection = F.instance.collection('users');
+
+// From a database reference
+final db = F.instance.database('app_data');
+final postsCollection = db.collection('posts');
+```
+
+### From Document Reference
+
+Collections can be nested within documents, creating subcollections:
+
+```dart
+// Nested collection
+final comments = F.instance
+  .collection('posts')
+  .doc('post123')
+  .collection('comments');
+```
+
+<Tip>
+  Subcollections are perfect for one-to-many relationships, like posts with comments or users with orders.
+</Tip>
+
+## Collection Operations
+
+### Adding Documents
+
+Add a new document with an auto-generated ID:
+
+```dart
+// Add document with auto-generated ID
+final newDoc = await F.instance
+  .collection('users')
+  .add({'name': 'Alice', 'age': 30});
+
+print('Created document with ID: ${newDoc.documentID}');
+```
+
+The `add()` method:
+- Generates a 20-character alphanumeric ID automatically
+- Returns a `DocumentReferenceWrapper` to the new document
+- Supports the `merge` parameter for merging with existing data (if ID collision occurs)
+
+<Note>
+  FSM uses the same auto-ID generation algorithm as Firebase, ensuring globally unique IDs.
+</Note>
+
+### Accessing Documents
+
+Access a document by ID:
+
+```dart
+// Specific document
+final userDoc = F.instance.collection('users').doc('user123');
+
+// Document with auto-generated ID
+final newUserDoc = F.instance.collection('users').doc();
+print('Auto-generated ID: ${newUserDoc.documentID}');
+```
+
+### Getting Document References
+
+Retrieve the current document reference in a collection:
+
+```dart
+final collection = F.instance.collection('users');
+
+// Get current document reference (last modified)
+final docRef = await collection.getDocuments();
+```
+
+## Streaming Collection Changes
+
+### Collection Snapshots
+
+Listen to changes in a collection:
+
+```dart
+F.instance
+  .collection('users')
+  .snapshots()
+  .listen((docRef) {
+    print('Document updated: ${docRef.documentID}');
+    print('Document path: ${docRef.path}');
+  });
+```
+
+<Accordion title="How Collection Streams Work">
+  Collection streams emit a `DocumentReferenceWrapper` whenever any document in the collection is modified:
+  
+  - **What it emits**: A reference to the most recently changed document
+  - **When it emits**: Every time a document is added, updated, or modified
+  - **Use case**: Track activity in a collection without fetching all documents
+  
+  This is different from Firebase, which returns query snapshots with all documents. FSM's approach is optimized for local, in-memory state management.
+</Accordion>
+
+### Practical Example
+
+```dart
+class UserCollectionListener {
+  StreamSubscription? _subscription;
+  
+  void start() {
+    _subscription = F.instance
+      .collection('users')
+      .snapshots()
+      .listen((docRef) async {
+        // Fetch the updated document
+        final snapshot = await docRef.get();
+        print('User ${docRef.documentID} changed: ${snapshot.data}');
+      });
+  }
+  
+  void stop() {
+    _subscription?.cancel();
+  }
+}
+```
+
+## Collection Properties
+
+### Path Information
+
+```dart
+final collection = F.instance.collection('users');
+
+// Collection ID (last segment of path)
+print(collection.collectionID); // 'users'
+
+// Full collection path
+print(collection.collectionPath); // 'users'
+
+// Full path including database
+print(collection.path); // 'default/users'
+
+// ID (same as collectionID)
+print(collection.id); // 'users'
+```
+
+### Parent Document
+
+Access the parent document of a subcollection:
+
+```dart
+final comments = F.instance
+  .collection('posts')
+  .doc('post123')
+  .collection('comments');
+
+// Get parent document
+final parentDoc = comments.parent();
+print(parentDoc?.documentID); // 'post123'
+
+// Top-level collections have no parent
+final topLevel = F.instance.collection('users');
+print(topLevel.parent()); // null
+```
+
+## Nested Collections
+
+Create complex hierarchical structures:
+
+```dart
+// posts/{postId}/comments/{commentId}
+F.instance
+  .collection('posts')
+  .doc('post123')
+  .collection('comments')
+  .doc('comment456')
+  .setData({
+    'text': 'Great post!',
+    'author': 'Alice',
+    'timestamp': FTimestamp.now(),
+  });
+
+// users/{userId}/orders/{orderId}/items/{itemId}
+F.instance
+  .collection('users')
+  .doc('user123')
+  .collection('orders')
+  .doc('order456')
+  .collection('items')
+  .doc('item789')
+  .setData({
+    'name': 'Flutter Book',
+    'price': 29.99,
+  });
+```
+
+<Tip>
+  Nested collections are ideal for data that belongs to a specific parent, like comments on a post or items in an order.
+</Tip>
+
+## Stream Management
+
+### Accessing the Stream Controller
+
+```dart
+final collection = F.instance.collection('users');
+
+// Get the underlying BehaviorSubject
+final controller = collection.streamController;
+
+// Check if it has listeners
+if (controller.hasListener) {
+  print('Collection is being observed');
+}
+
+// Get current value
+if (controller.hasValue) {
+  final currentDoc = controller.value;
+  print('Last modified document: ${currentDoc.documentID}');
+}
+```
+
+### Closing Streams
+
+```dart
+final collection = F.instance.collection('users');
+
+// Close the collection stream when done
+collection.close();
+```
+
+<Note>
+  FSM automatically manages stream lifecycle. Only call `close()` if you need to explicitly clean up a collection stream that's no longer needed.
+</Note>
+
+## Use Cases
+
+### 1. User Management
+
+```dart
+class UserRepository {
+  final collection = F.instance.collection('users');
+  
+  Future<DocumentReferenceWrapper> createUser(Map<String, dynamic> userData) {
+    return collection.add(userData);
+  }
+  
+  DocumentReferenceWrapper getUser(String userId) {
+    return collection.doc(userId);
+  }
+  
+  Stream<DocumentReferenceWrapper> watchUsers() {
+    return collection.snapshots();
+  }
+}
+```
+
+### 2. Activity Feed
+
+```dart
+class ActivityFeed {
+  final activities = F.instance.collection('activities');
+  
+  void listen() {
+    activities.snapshots().listen((activityRef) async {
+      final snapshot = await activityRef.get();
+      _showNotification(snapshot.data);
+    });
+  }
+  
+  void _showNotification(dynamic data) {
+    // Show in-app notification
+  }
+}
+```
+
+### 3. Chat Rooms
+
+```dart
+class ChatRoom {
+  late final CollectionReferenceWrapper messages;
+  
+  ChatRoom(String roomId) {
+    messages = F.instance
+      .collection('rooms')
+      .doc(roomId)
+      .collection('messages');
+  }
+  
+  Future<void> sendMessage(String text, String userId) {
+    return messages.add({
+      'text': text,
+      'userId': userId,
+      'timestamp': FTimestamp.now(),
+    });
+  }
+}
+```
+
+## Best Practices
+
+1. **Use consistent naming**: Name collections with plural nouns (`'users'`, `'posts'`, `'comments'`).
+
+2. **Group related documents**: Collections should contain documents with similar structures.
+
+3. **Leverage subcollections**: Use nested collections for one-to-many relationships.
+
+4. **Avoid deep nesting**: Keep hierarchy depth reasonable (3-4 levels max) for maintainability.
+
+5. **Document your structure**: Comment complex collection hierarchies to help future maintainers.
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Documents" icon="file" href="/concepts/documents">
+    Learn about document operations and snapshots
+  </Card>
+  <Card title="Values" icon="code" href="/concepts/values">
+    Access nested data within documents
+  </Card>
+</CardGroup>

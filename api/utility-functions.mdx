@@ -1,0 +1,326 @@
+---
+title: "Utility Functions"
+description: "Path-based data manipulation functions for FSM"
+---
+
+## Overview
+
+FSM provides utility functions for manipulating nested data structures using path-based notation. These functions enable reading, writing, and updating values at any depth within Map structures.
+
+## Functions
+
+### getValue()
+
+Retrieves a value from nested data using a path string.
+
+```dart
+dynamic getValue(dynamic value, String path)
+```
+
+<ParamField path="value" type="dynamic" required>
+  The root data structure to read from (typically a Map)
+</ParamField>
+
+<ParamField path="path" type="String" required>
+  Slash-separated path to the target value (e.g., `'user/profile/name'`)
+</ParamField>
+
+<ParamField path="Returns" type="dynamic">
+  The value at the specified path, or `null` if the path doesn't exist
+</ParamField>
+
+#### Usage
+
+```dart
+Map<String, dynamic> data = {
+  'user': {
+    'profile': {
+      'name': 'Alice',
+      'age': 30
+    },
+    'settings': {
+      'theme': 'dark'
+    }
+  }
+};
+
+// Get nested value
+String? name = getValue(data, 'user/profile/name');
+print(name); // 'Alice'
+
+// Get deeper nested value
+String? theme = getValue(data, 'user/settings/theme');
+print(theme); // 'dark'
+
+// Non-existent path returns null
+var missing = getValue(data, 'user/profile/email');
+print(missing); // null
+
+// Empty path returns root value
+var root = getValue(data, '');
+print(root); // Returns entire data map
+```
+
+---
+
+### buildValueMap()
+
+Constructs a nested Map structure from a value and path components.
+
+```dart
+dynamic buildValueMap(dynamic value, List<String> pathComponents)
+```
+
+<ParamField path="value" type="dynamic" required>
+  The value to place at the deepest level of the structure
+</ParamField>
+
+<ParamField path="pathComponents" type="List<String>" required>
+  List of path segments defining the nested structure
+</ParamField>
+
+<ParamField path="Returns" type="dynamic">
+  A nested Map with the value at the specified path, or the value itself if pathComponents is empty
+</ParamField>
+
+#### Usage
+
+```dart
+// Build nested structure
+var result = buildValueMap('John', ['user', 'profile', 'name']);
+print(result);
+// Output: {'user': {'profile': {'name': 'John'}}}
+
+// Build with multiple levels
+var settings = buildValueMap(true, ['app', 'settings', 'notifications', 'enabled']);
+print(settings);
+// Output: {'app': {'settings': {'notifications': {'enabled': true}}}}
+
+// Empty path returns value directly
+var direct = buildValueMap({'key': 'value'}, []);
+print(direct); // {'key': 'value'}
+
+// Single level
+var single = buildValueMap(42, ['count']);
+print(single); // {'count': 42}
+```
+
+---
+
+### updateData()
+
+Recursively merges two data structures, updating values from the new data into the original.
+
+```dart
+dynamic updateData(dynamic data, dynamic dataNew)
+```
+
+<ParamField path="data" type="dynamic" required>
+  The original data structure to update
+</ParamField>
+
+<ParamField path="dataNew" type="dynamic" required>
+  The new data containing updates to merge
+</ParamField>
+
+<ParamField path="Returns" type="dynamic">
+  Merged data structure with updates applied. If both are Maps, performs deep merge. Otherwise, returns dataNew.
+</ParamField>
+
+#### Usage
+
+```dart
+// Deep merge of nested maps
+Map<String, dynamic> original = {
+  'user': {
+    'name': 'Alice',
+    'age': 30,
+    'profile': {
+      'bio': 'Hello'
+    }
+  },
+  'settings': {'theme': 'light'}
+};
+
+Map<String, dynamic> updates = {
+  'user': {
+    'age': 31,
+    'profile': {
+      'location': 'NYC'
+    }
+  }
+};
+
+var merged = updateData(original, updates);
+print(merged);
+// Output:
+// {
+//   'user': {
+//     'name': 'Alice',        // Preserved
+//     'age': 31,              // Updated
+//     'profile': {
+//       'bio': 'Hello',       // Preserved
+//       'location': 'NYC'     // Added
+//     }
+//   },
+//   'settings': {'theme': 'light'}  // Preserved
+// }
+
+// Non-map values are overwritten
+var result = updateData(42, 'new value');
+print(result); // 'new value'
+```
+
+---
+
+### setData()
+
+Sets a value at a specific path within a data structure, creating intermediate maps as needed.
+
+```dart
+dynamic setData(dynamic data, dynamic dataNew, List<String> pathComponents)
+```
+
+<ParamField path="data" type="dynamic" required>
+  The original data structure
+</ParamField>
+
+<ParamField path="dataNew" type="dynamic" required>
+  The value to set at the target path
+</ParamField>
+
+<ParamField path="pathComponents" type="List<String>" required>
+  List of path segments defining where to set the value
+</ParamField>
+
+<ParamField path="Returns" type="dynamic">
+  Updated data structure with the new value at the specified path
+</ParamField>
+
+#### Usage
+
+```dart
+// Set value in existing structure
+Map<String, dynamic> data = {
+  'user': {
+    'name': 'Alice'
+  }
+};
+
+var updated = setData(data, 30, ['user', 'age']);
+print(updated);
+// Output: {'user': {'name': 'Alice', 'age': 30}}
+
+// Create new nested path
+var result = setData({}, 'hello@example.com', ['user', 'contact', 'email']);
+print(result);
+// Output: {'user': {'contact': {'email': 'hello@example.com'}}}
+
+// Set value on null data (creates structure)
+var fromNull = setData(null, 'value', ['path', 'to', 'data']);
+print(fromNull);
+// Output: {'path': {'to': {'data': 'value'}}}
+
+// Empty path components replace entire data
+var replaced = setData({'old': 'data'}, {'new': 'data'}, []);
+print(replaced); // {'new': 'data'}
+
+// Overwrites non-map values when creating nested paths
+var overwrite = setData('string value', 42, ['nested', 'value']);
+print(overwrite);
+// Output: {'nested': {'value': 42}}
+```
+
+## Common Patterns
+
+### Reading Nested Values
+
+Use `getValue()` to safely access nested data:
+
+```dart
+final snapshot = await F.instance
+  .doc('users/alice')
+  .get();
+
+// Safe nested access
+String? city = getValue(snapshot.data, 'address/city');
+if (city != null) {
+  print('User lives in $city');
+}
+```
+
+### Building Update Payloads
+
+Use `buildValueMap()` to create structured updates:
+
+```dart
+// Create nested update structure
+var update = buildValueMap(true, ['preferences', 'notifications', 'email']);
+
+// Merge with document
+await F.instance
+  .doc('users/alice')
+  .setData(update, merge: true);
+```
+
+### Partial Updates
+
+Use `updateData()` for deep merging:
+
+```dart
+// Get current data
+final snapshot = await F.instance.doc('users/alice').get();
+
+// Create partial update
+Map<String, dynamic> partialUpdate = {
+  'profile': {
+    'lastSeen': DateTime.now().toIso8601String()
+  }
+};
+
+// Merge update
+var merged = updateData(snapshot.data, partialUpdate);
+
+// Save merged data
+await F.instance
+  .doc('users/alice')
+  .setData(merged);
+```
+
+### Path-based Updates
+
+Use `setData()` to update specific paths:
+
+```dart
+// Get current document
+final snapshot = await F.instance.doc('settings/app').get();
+
+// Update specific path
+var updated = setData(
+  snapshot.data,
+  'dark',
+  ['theme', 'mode']
+);
+
+// Save updated data
+await F.instance
+  .doc('settings/app')
+  .setData(updated);
+```
+
+## Notes
+
+- All functions handle `null` values gracefully
+- Path components use forward slash (`/`) as separator in string paths
+- Path components use `List<String>` when passed as arrays
+- `getValue()` returns `null` for non-existent paths
+- `buildValueMap()` always creates new Map instances
+- `updateData()` performs deep merging for Map types only
+- `setData()` creates intermediate maps as needed
+- These functions are used internally by FSM's value reference system
+
+## See Also
+
+- [ValueReferenceWrapper](/api/value-reference) - Uses these functions for path-based value operations
+- [DocumentReferenceWrapper](/api/document-reference) - Document operations that use these utilities
+- [DocumentSnapshotWrapper](/api/document-snapshot) - Snapshot value access using `getValue()`

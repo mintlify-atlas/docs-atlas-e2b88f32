@@ -1,0 +1,400 @@
+---
+title: Global Observer
+description: Debug and monitor all FSM state changes with the global observer listener
+---
+
+## Overview
+
+The global observer is a powerful debugging tool that streams **all** FSM updates across your entire application. It's implemented as a global listener that captures every state change, making it invaluable for debugging, logging, and understanding data flow.
+
+## Implementation
+
+From `f_wrapper.dart:53-56`:
+
+```dart
+/// Internal global listener that streams all FSM updates.
+/// Use via [globalObserverListener].
+static PublishSubject<dynamic> _globalObserverStream =
+    PublishSubject<dynamic>();
+```
+
+## Basic Usage
+
+### Setting Up the Observer
+
+```dart
+void setupDebugObserver() {
+  F.instance.globalObserverListener.listen((snapshot) {
+    print('FSM Update: $snapshot');
+  });
+}
+
+void main() {
+  if (kDebugMode) {
+    setupDebugObserver();
+  }
+  runApp(MyApp());
+}
+```
+
+### Conditional Debugging
+
+The example from `f_wrapper.dart:334-340` shows the recommended pattern:
+
+```dart
+if (FlavorConfig.isDebug) {
+  F.instance.globalObserverListener.listen((value) {
+    print('Update: $value');
+  });
+}
+```
+
+## Accessing the Observer
+
+From `f_wrapper.dart:327-346`:
+
+```dart
+/// A global listener that streams all FSM updates.
+///
+/// The internal listener implementation is a static
+/// instance so this getter reinitializes the stream if
+/// it has been closed.
+///
+/// This listener is useful for debugging FSM updates.
+PublishSubject<dynamic> get globalObserverListener {
+  if (_globalObserverStream.isClosed) {
+    _globalObserverStream = PublishSubject<dynamic>();
+  }
+  return _globalObserverStream;
+}
+```
+
+<Note>
+The stream automatically reinitializes if it has been closed, ensuring you can always access the observer.
+</Note>
+
+## When Updates Are Emitted
+
+The global observer captures updates in several scenarios:
+
+### 1. Normal Data Changes
+
+From `f_wrapper.dart:215-216`:
+
+```dart
+_globalObserverStream.add(snapshotHolder);
+```
+
+### 2. Merge Operations
+
+From `f_wrapper.dart:196`:
+
+```dart
+_globalObserverStream.add(snapshotHolder);
+```
+
+### 3. Notify Signals
+
+From `f_wrapper.dart:159`:
+
+```dart
+_globalObserverStream.add(snapshot);
+```
+
+Every `setData()`, `updateData()`, and `notify()` operation triggers the global observer.
+
+## Advanced Usage Examples
+
+### 1. Detailed Logging
+
+```dart
+class FSMLogger {
+  static void initialize() {
+    F.instance.globalObserverListener.listen((snapshot) {
+      if (snapshot is DocumentSnapshotWrapper) {
+        _logUpdate(snapshot);
+      }
+    });
+  }
+
+  static void _logUpdate(DocumentSnapshotWrapper snapshot) {
+    final timestamp = DateTime.now().toIso8601String();
+    final path = snapshot.path;
+    final data = snapshot.data;
+    
+    print('[$timestamp] FSM Update');
+    print('  Path: $path');
+    print('  Data: $data');
+    print('  Exists: ${snapshot.exists}');
+    print('---');
+  }
+}
+```
+
+### 2. State Change Analytics
+
+```dart
+class StateAnalytics {
+  final Map<String, int> _updateCounts = {};
+  final List<String> _recentPaths = [];
+  static const int maxRecentPaths = 100;
+
+  void startTracking() {
+    F.instance.globalObserverListener.listen((snapshot) {
+      if (snapshot is DocumentSnapshotWrapper) {
+        _trackUpdate(snapshot);
+      }
+    });
+  }
+
+  void _trackUpdate(DocumentSnapshotWrapper snapshot) {
+    final path = snapshot.path;
+    
+    // Count updates per path
+    _updateCounts[path] = (_updateCounts[path] ?? 0) + 1;
+    
+    // Track recent changes
+    _recentPaths.add(path);
+    if (_recentPaths.length > maxRecentPaths) {
+      _recentPaths.removeAt(0);
+    }
+  }
+
+  Map<String, int> get hotspots => Map.from(_updateCounts)
+    ..removeWhere((key, value) => value < 5);
+
+  List<String> get recentActivity => List.from(_recentPaths);
+
+  void printReport() {
+    print('=== FSM Analytics Report ===');
+    print('\nHotspots (5+ updates):');
+    hotspots.forEach((path, count) {
+      print('  $path: $count updates');
+    });
+    print('\nRecent Activity (last ${_recentPaths.length}):');
+    _recentPaths.take(10).forEach(print);
+  }
+}
+```
+
+### 3. Performance Monitoring
+
+```dart
+class PerformanceMonitor {
+  final Map<String, List<DateTime>> _updateTimestamps = {};
+
+  void startMonitoring() {
+    F.instance.globalObserverListener.listen((snapshot) {
+      if (snapshot is DocumentSnapshotWrapper) {
+        _recordUpdate(snapshot);
+      }
+    });
+  }
+
+  void _recordUpdate(DocumentSnapshotWrapper snapshot) {
+    final path = snapshot.path;
+    final now = DateTime.now();
+    
+    _updateTimestamps.putIfAbsent(path, () => []).add(now);
+    
+    // Keep only last minute of updates
+    final oneMinuteAgo = now.subtract(Duration(minutes: 1));
+    _updateTimestamps[path]!.removeWhere((t) => t.isBefore(oneMinuteAgo));
+  }
+
+  double getUpdateFrequency(String path) {
+    final updates = _updateTimestamps[path];
+    if (updates == null || updates.isEmpty) return 0.0;
+    
+    if (updates.length == 1) return 0.0;
+    
+    final duration = updates.last.difference(updates.first);
+    return updates.length / duration.inSeconds;
+  }
+
+  List<String> getHighFrequencyPaths({double threshold = 1.0}) {
+    return _updateTimestamps.keys
+        .where((path) => getUpdateFrequency(path) > threshold)
+        .toList();
+  }
+}
+```
+
+### 4. Filtered Observer
+
+Observe only specific paths or data types:
+
+```dart
+class FilteredObserver {
+  void observePath(String pathPrefix, void Function(DocumentSnapshotWrapper) callback) {
+    F.instance.globalObserverListener.listen((snapshot) {
+      if (snapshot is DocumentSnapshotWrapper) {
+        if (snapshot.path.startsWith(pathPrefix)) {
+          callback(snapshot);
+        }
+      }
+    });
+  }
+
+  void observeUser(String userId) {
+    observePath('default/users/$userId', (snapshot) {
+      print('User $userId data changed: ${snapshot.data}');
+    });
+  }
+
+  void observeCollection(String collectionName) {
+    observePath('default/$collectionName', (snapshot) {
+      print('Document in $collectionName changed: ${snapshot.documentID}');
+    });
+  }
+}
+```
+
+### 5. Time-Travel Debugging
+
+Capture state history for debugging:
+
+```dart
+class StateHistory {
+  final List<StateSnapshot> _history = [];
+  static const int maxHistory = 1000;
+
+  void startRecording() {
+    F.instance.globalObserverListener.listen((snapshot) {
+      if (snapshot is DocumentSnapshotWrapper) {
+        _recordSnapshot(snapshot);
+      }
+    });
+  }
+
+  void _recordSnapshot(DocumentSnapshotWrapper snapshot) {
+    _history.add(StateSnapshot(
+      timestamp: DateTime.now(),
+      path: snapshot.path,
+      data: _deepCopy(snapshot.data),
+    ));
+
+    if (_history.length > maxHistory) {
+      _history.removeAt(0);
+    }
+  }
+
+  List<StateSnapshot> getHistory({String? path, DateTime? since}) {
+    var filtered = _history.where((s) => true);
+    
+    if (path != null) {
+      filtered = filtered.where((s) => s.path == path);
+    }
+    
+    if (since != null) {
+      filtered = filtered.where((s) => s.timestamp.isAfter(since));
+    }
+    
+    return filtered.toList();
+  }
+
+  dynamic _deepCopy(dynamic value) {
+    if (value is Map) {
+      return Map.from(value.map((k, v) => MapEntry(k, _deepCopy(v))));
+    } else if (value is List) {
+      return List.from(value.map(_deepCopy));
+    }
+    return value;
+  }
+}
+
+class StateSnapshot {
+  final DateTime timestamp;
+  final String path;
+  final dynamic data;
+
+  StateSnapshot({
+    required this.timestamp,
+    required this.path,
+    required this.data,
+  });
+
+  @override
+  String toString() => '[$timestamp] $path: $data';
+}
+```
+
+## Stream Management
+
+The global observer stream can be closed and will automatically reinitialize:
+
+```dart
+void cleanupObserver() {
+  // The stream is automatically recreated on next access
+  F.instance.globalObserverListener.close();
+}
+```
+
+From `f_wrapper.dart:73-74`:
+
+```dart
+_globalObserverStream.close();
+_globalObserverStream = PublishSubject<dynamic>();
+```
+
+## Best Practices
+
+<Tip>
+**Only enable in development**: The global observer has performance overhead. Only enable it in debug/development builds.
+</Tip>
+
+<Tip>
+**Filter your observations**: If you're tracking specific features, filter the stream to reduce noise.
+</Tip>
+
+<Warning>
+**Memory considerations**: If you're storing history or analytics, implement size limits to prevent memory leaks.
+</Warning>
+
+<Note>
+The global observer receives `DocumentSnapshotWrapper` objects. Check the type before accessing snapshot-specific properties.
+</Note>
+
+## Production Monitoring
+
+For production, consider selective monitoring:
+
+```dart
+class ProductionMonitor {
+  static void initialize() {
+    if (shouldMonitorInProduction()) {
+      F.instance.globalObserverListener.listen((snapshot) {
+        if (snapshot is DocumentSnapshotWrapper) {
+          _checkForIssues(snapshot);
+        }
+      });
+    }
+  }
+
+  static bool shouldMonitorInProduction() {
+    // Enable for beta testers or specific users
+    return RemoteConfig.enableFSMMonitoring;
+  }
+
+  static void _checkForIssues(DocumentSnapshotWrapper snapshot) {
+    // Log only anomalies
+    if (_isAnomalous(snapshot)) {
+      Analytics.logEvent('fsm_anomaly', {
+        'path': snapshot.path,
+        'data_type': snapshot.data.runtimeType.toString(),
+      });
+    }
+  }
+
+  static bool _isAnomalous(DocumentSnapshotWrapper snapshot) {
+    // Define your anomaly detection logic
+    return false;
+  }
+}
+```
+
+## Related
+
+- [Notifications](/advanced/notifications) - Trigger updates without data changes
+- [Event Databases](/advanced/event-databases) - Organize ephemeral state
+- [Documents](/concepts/documents) - Understanding FSM's reactive model

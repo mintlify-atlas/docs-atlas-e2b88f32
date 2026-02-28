@@ -1,0 +1,232 @@
+---
+title: "CollectionReferenceWrapper"
+description: "Reference to an FSM collection with query and modification methods"
+---
+
+## Overview
+
+The `CollectionReferenceWrapper` class represents a reference to a collection in FSM. It provides methods to query documents, add new documents, and listen to collection changes.
+
+## Properties
+
+<ResponseField name="path" type="String">
+  The full path of the collection including database path.
+  
+  ```dart
+  final collection = F.instance.database().collection('users');
+  print(collection.path); // 'default/users'
+  ```
+</ResponseField>
+
+<ResponseField name="id" type="String?">
+  The collection ID (last segment of the path). Returns null if the path is empty.
+  
+  ```dart
+  final collection = F.instance.database().collection('users');
+  print(collection.id); // 'users'
+  ```
+</ResponseField>
+
+<ResponseField name="collectionPath" type="String">
+  The document path portion of the full path.
+  
+  ```dart
+  print(collection.collectionPath); // 'users'
+  ```
+</ResponseField>
+
+<ResponseField name="collectionID" type="String">
+  The collection identifier (last component of the document path).
+  
+  ```dart
+  print(collection.collectionID); // 'users'
+  ```
+</ResponseField>
+
+<ResponseField name="streamController" type="BehaviorSubject<DocumentReferenceWrapper>">
+  The underlying RxDart BehaviorSubject that manages the collection's stream.
+  
+  ```dart
+  final controller = collection.streamController;
+  ```
+</ResponseField>
+
+## Methods
+
+### doc
+
+<ParamField path="path" type="String?" optional>
+  The document ID or path. If not provided, auto-generates a unique ID.
+</ParamField>
+
+Returns a `DocumentReferenceWrapper` for a document in this collection.
+
+```dart
+DocumentReferenceWrapper doc([String? path])
+```
+
+**Example:**
+
+```dart
+// Auto-generated document ID
+final newDoc = collection.doc();
+
+// Specific document ID
+final userDoc = collection.doc('user123');
+```
+
+### add
+
+<ParamField path="data" type="dynamic" required>
+  The data to add to the new document. Can be any type (Map, List, primitive).
+</ParamField>
+
+<ParamField path="merge" type="bool" default="false">
+  If true, merges the data with existing document data if it exists.
+</ParamField>
+
+Adds a new document to the collection with auto-generated ID.
+
+```dart
+Future<DocumentReferenceWrapper> add(
+  dynamic data, {
+  bool merge = false,
+})
+```
+
+**Returns:** A `Future` that resolves to the created `DocumentReferenceWrapper`.
+
+**Example:**
+
+```dart
+// Add a new user
+final userRef = await collection.add({
+  'name': 'John Doe',
+  'email': 'john@example.com',
+  'createdAt': DateTime.now(),
+});
+
+print(userRef.documentID); // Auto-generated ID
+```
+
+### getDocuments
+
+Retrieves the current snapshot of the collection.
+
+```dart
+Future<DocumentReferenceWrapper> getDocuments()
+```
+
+**Returns:** A `Future` that resolves to a `DocumentReferenceWrapper`.
+
+**Example:**
+
+```dart
+final snapshot = await collection.getDocuments();
+```
+
+### snapshots
+
+<ParamField path="includeMetadataChanges" type="bool" default="false">
+  Whether to include metadata changes in the stream.
+</ParamField>
+
+Returns a stream of collection changes.
+
+```dart
+Stream<DocumentReferenceWrapper> snapshots({
+  bool includeMetadataChanges = false,
+})
+```
+
+**Returns:** A `Stream` that emits `DocumentReferenceWrapper` whenever the collection changes.
+
+**Example:**
+
+```dart
+collection.snapshots().listen((docRef) {
+  print('Collection updated: ${docRef.documentID}');
+});
+```
+
+### parent
+
+Returns the parent document reference, or null if this is a top-level collection.
+
+```dart
+DocumentReferenceWrapper? parent()
+```
+
+**Returns:** The parent `DocumentReferenceWrapper` or null.
+
+**Example:**
+
+```dart
+final subcollection = F.instance
+  .database()
+  .doc('users/user123')
+  .collection('settings');
+
+final parentDoc = subcollection.parent();
+print(parentDoc?.documentID); // 'user123'
+```
+
+### close
+
+Closes the collection stream if there are no active listeners.
+
+```dart
+void close()
+```
+
+**Example:**
+
+```dart
+collection.close();
+```
+
+## Usage Examples
+
+### Basic CRUD Operations
+
+```dart
+final users = F.instance.database().collection('users');
+
+// Add a document
+final newUser = await users.add({
+  'name': 'Alice',
+  'age': 30,
+});
+
+// Reference a specific document
+final userDoc = users.doc('alice-123');
+
+// Set document data
+await userDoc.setData({
+  'name': 'Alice',
+  'age': 30,
+  'verified': true,
+});
+```
+
+### Listening to Changes
+
+```dart
+final users = F.instance.database().collection('users');
+
+users.snapshots().listen((docRef) {
+  print('User added or modified: ${docRef.documentID}');
+});
+```
+
+### Working with Subcollections
+
+```dart
+final settings = F.instance
+  .database()
+  .doc('users/user123')
+  .collection('settings');
+
+final parentDoc = settings.parent();
+print(parentDoc?.path); // 'default/users/user123'
+```

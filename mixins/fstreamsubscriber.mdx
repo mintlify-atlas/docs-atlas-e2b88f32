@@ -1,0 +1,565 @@
+---
+title: 'FStreamSubscriber Mixins'
+description: 'Manage generic Dart stream subscriptions with automatic cleanup'
+keywords: ['FStreamSubscriberMixin', 'FStreamSubscriberStateMixin', 'FStreamSubscriberChangeNotifierMixin', 'stream', 'subscription']
+---
+
+FStreamSubscriber mixins provide general-purpose subscription management for any Dart `Stream`. These mixins handle subscription tracking and cleanup, making them ideal for managing WebSocket streams, broadcast streams, or any custom stream implementation.
+
+<Note>
+These mixins are imported from Firebase UI utilities and adapted for FSM. They work with any Dart stream, not just FSM references.
+</Note>
+
+## Available Variants
+
+<CardGroup cols={3}>
+  <Card title="FStreamSubscriberMixin" icon="puzzle-piece">
+    Base mixin for any class. Requires manual cleanup.
+  </Card>
+  <Card title="FStreamSubscriberStateMixin" icon="mobile">
+    For State classes. Automatic cleanup in dispose().
+  </Card>
+  <Card title="FStreamSubscriberChangeNotifierMixin" icon="bell">
+    For ChangeNotifier. Automatic cleanup in dispose().
+  </Card>
+</CardGroup>
+
+## Core Methods
+
+### listen()
+
+Listens to any Dart stream and tracks the subscription.
+
+```dart
+void listen<T>(
+  Stream<T>? stream,
+  void Function(T data) onData,
+  {Function? onError}
+)
+```
+
+<ParamField path="stream" type="Stream<T>?" required>
+  The stream to listen to. If null, no subscription is created.
+</ParamField>
+
+<ParamField path="onData" type="Function" required>
+  Callback invoked when the stream emits data. Receives typed data of type `T`.
+</ParamField>
+
+<ParamField path="onError" type="Function?">
+  Optional error handler for stream errors.
+</ParamField>
+
+### cancelSubscriptions()
+
+Cancels all tracked subscriptions.
+
+```dart
+Future<void> cancelSubscriptions() async
+```
+
+<Warning>
+For State and ChangeNotifier variants, `cancelSubscriptions()` is automatically called in `dispose()`. Manual calls are only needed with the base `FStreamSubscriberMixin`.
+</Warning>
+
+<Info>
+The method waits for all cancellations to complete using `Future.wait()`, ensuring clean shutdown.
+</Info>
+
+## Usage Examples
+
+### Basic Stream Listener
+
+```dart
+class DataService with FStreamSubscriberMixin {
+  final _controller = StreamController<int>.broadcast();
+
+  void startListening() {
+    listen(
+      _controller.stream,
+      (data) {
+        print('Received: $data');
+      },
+      onError: (error) {
+        print('Error: $error');
+      },
+    );
+  }
+
+  Future<void> cleanup() async {
+    await cancelSubscriptions();
+    await _controller.close();
+  }
+}
+```
+
+### In StatefulWidget
+
+```dart
+class LiveDataWidget extends StatefulWidget {
+  final Stream<List<String>> dataStream;
+
+  const LiveDataWidget({required this.dataStream});
+
+  @override
+  State<LiveDataWidget> createState() => _LiveDataWidgetState();
+}
+
+class _LiveDataWidgetState extends State<LiveDataWidget>
+    with FStreamSubscriberStateMixin<LiveDataWidget> {
+  List<String> items = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeToData();
+  }
+
+  void _subscribeToData() {
+    listen(
+      widget.dataStream,
+      (data) {
+        setState(() {
+          items = data;
+        });
+      },
+      onError: (error) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $error')),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: items.length,
+      itemBuilder: (context, index) => Text(items[index]),
+    );
+  }
+  
+  // dispose() automatically calls cancelSubscriptions()
+}
+```
+
+### With ChangeNotifier
+
+```dart
+class RealtimeNotifier extends ChangeNotifier
+    with FStreamSubscriberChangeNotifierMixin {
+  int _value = 0;
+  String _status = 'disconnected';
+
+  int get value => _value;
+  String get status => _status;
+
+  void connectToStream(Stream<int> dataStream, Stream<String> statusStream) {
+    // Listen to multiple streams
+    listen(
+      dataStream,
+      (data) {
+        _value = data;
+        notifyListeners();
+      },
+    );
+
+    listen(
+      statusStream,
+      (status) {
+        _status = status;
+        notifyListeners();
+      },
+    );
+  }
+  
+  // dispose() automatically calls cancelSubscriptions()
+}
+```
+
+## Multiple Stream Management
+
+The mixin automatically tracks all subscriptions, making it easy to manage multiple streams:
+
+```dart
+class MultiStreamController with FStreamSubscriberMixin {
+  void connectToServices(
+    Stream<UserData> userStream,
+    Stream<Message> messageStream,
+    Stream<Notification> notificationStream,
+  ) {
+    listen(userStream, (user) {
+      print('User updated: ${user.name}');
+    });
+
+    listen(messageStream, (message) {
+      print('New message: ${message.content}');
+    });
+
+    listen(notificationStream, (notification) {
+      print('Notification: ${notification.title}');
+    });
+  }
+
+  Future<void> disconnectAll() async {
+    await cancelSubscriptions(); // Cancels all three streams
+  }
+}
+```
+
+## Practical Examples
+
+### WebSocket Connection
+
+```dart
+class WebSocketService with FStreamSubscriberMixin {
+  IOWebSocketChannel? _channel;
+
+  void connect(String url) {
+    _channel = IOWebSocketChannel.connect(url);
+    
+    listen(
+      _channel!.stream,
+      (message) {
+        final data = jsonDecode(message);
+        handleMessage(data);
+      },
+      onError: (error) {
+        print('WebSocket error: $error');
+        reconnect();
+      },
+    );
+  }
+
+  void handleMessage(Map<String, dynamic> data) {
+    print('Received: $data');
+  }
+
+  void reconnect() {
+    // Reconnection logic
+  }
+
+  Future<void> disconnect() async {
+    await cancelSubscriptions();
+    await _channel?.sink.close();
+  }
+}
+```
+
+### Timer/Periodic Streams
+
+```dart
+class PeriodicUpdater extends State<MyWidget>
+    with FStreamSubscriberStateMixin<MyWidget> {
+  int _counter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startPeriodicUpdates();
+  }
+
+  void _startPeriodicUpdates() {
+    // Create a periodic stream
+    final stream = Stream.periodic(
+      const Duration(seconds: 1),
+      (count) => count,
+    );
+
+    listen(
+      stream,
+      (count) {
+        setState(() {
+          _counter = count;
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text('Counter: $_counter');
+  }
+  
+  // dispose() automatically cancels the periodic stream
+}
+```
+
+### Combining Multiple Streams
+
+```dart
+class CombinedStreamListener with FStreamSubscriberMixin {
+  void listenToMultipleSources(
+    Stream<int> source1,
+    Stream<String> source2,
+    Stream<bool> source3,
+  ) {
+    int? value1;
+    String? value2;
+    bool? value3;
+
+    listen(source1, (data) {
+      value1 = data;
+      checkComplete();
+    });
+
+    listen(source2, (data) {
+      value2 = data;
+      checkComplete();
+    });
+
+    listen(source3, (data) {
+      value3 = data;
+      checkComplete();
+    });
+
+    void checkComplete() {
+      if (value1 != null && value2 != null && value3 != null) {
+        onAllDataReceived(value1!, value2!, value3!);
+      }
+    }
+  }
+
+  void onAllDataReceived(int v1, String v2, bool v3) {
+    print('All data received: $v1, $v2, $v3');
+  }
+}
+```
+
+## Automatic Cleanup
+
+State and ChangeNotifier variants automatically clean up in `dispose()`:
+
+<Tabs>
+  <Tab title="FStreamSubscriberStateMixin">
+    ```dart
+    mixin FStreamSubscriberStateMixin<T extends StatefulWidget> on State<T> {
+      final List<StreamSubscription> _subscriptions = [];
+
+      @override
+      void dispose() {
+        cancelSubscriptions();
+        super.dispose();
+      }
+
+      Future<void> cancelSubscriptions() async {
+        final List<Future> futures = [];
+        for (var subscription in _subscriptions) {
+          futures.add(subscription.cancel());
+        }
+        await Future.wait(futures);
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="FStreamSubscriberChangeNotifierMixin">
+    ```dart
+    mixin FStreamSubscriberChangeNotifierMixin on ChangeNotifier {
+      final List<StreamSubscription> _subscriptions = [];
+
+      @override
+      void dispose() {
+        cancelSubscriptions();
+        super.dispose();
+      }
+
+      void cancelSubscriptions() {
+        for (var subscription in _subscriptions) {
+          subscription.cancel();
+        }
+      }
+    }
+    ```
+    
+    <Note>
+    The ChangeNotifier variant uses synchronous cancellation, while the State variant uses async cancellation with `Future.wait()`.
+    </Note>
+  </Tab>
+</Tabs>
+
+<Check>
+No need to override `dispose()` or manually call `cancelSubscriptions()` when using State or ChangeNotifier variants. Cleanup is automatic!
+</Check>
+
+## Null Safety
+
+The `listen()` method accepts nullable streams, gracefully handling null values:
+
+```dart
+class ConditionalListener with FStreamSubscriberMixin {
+  void setupListeners(bool shouldListen) {
+    final Stream<int>? stream = shouldListen 
+        ? createStream() 
+        : null;
+
+    // Safe to pass null - no subscription will be created
+    listen(stream, (data) {
+      print('Data: $data');
+    });
+  }
+
+  Stream<int> createStream() {
+    return Stream.value(42);
+  }
+}
+```
+
+<Info>
+If a null stream is passed to `listen()`, no subscription is created and the method returns safely.
+</Info>
+
+## Implementation Details
+
+The mixin maintains a simple list of subscriptions:
+
+```dart
+final List<StreamSubscription> _streamSubscriptions = [];
+```
+
+Each call to `listen()` adds a new subscription to the list. When `cancelSubscriptions()` is called:
+
+1. All subscriptions are canceled concurrently using `Future.wait()`
+2. The subscription list remains in memory (not cleared)
+
+<Warning>
+Unlike FListener mixins, FStreamSubscriber does not clear the subscription list after cancellation. Avoid calling `listen()` after `cancelSubscriptions()` unless you intend to accumulate canceled subscriptions.
+</Warning>
+
+## Best Practices
+
+### Use State/ChangeNotifier Variants
+
+<Tabs>
+  <Tab title="Recommended">
+    ```dart
+    // Automatic cleanup
+    class MyWidget extends State<Widget> 
+        with FStreamSubscriberStateMixin<Widget> {
+      @override
+      void initState() {
+        super.initState();
+        listen(myStream, (data) {});
+      }
+      // dispose() handled automatically
+    }
+    ```
+  </Tab>
+
+  <Tab title="Not Recommended">
+    ```dart
+    // Manual cleanup required - easy to forget!
+    class MyWidget extends State<Widget> with FStreamSubscriberMixin {
+      @override
+      void initState() {
+        super.initState();
+        listen(myStream, (data) {});
+      }
+
+      @override
+      void dispose() async {
+        await cancelSubscriptions(); // Must remember to call this
+        super.dispose();
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Always Handle Errors
+
+Provide an `onError` callback to prevent unhandled exceptions:
+
+```dart
+listen(
+  myStream,
+  (data) => handleData(data),
+  onError: (error, stackTrace) {
+    logger.error('Stream error', error, stackTrace);
+  },
+);
+```
+
+### Avoid Listen After Cancel
+
+<Warning>
+Don't call `listen()` after `cancelSubscriptions()` in the same instance:
+
+```dart
+class BadExample with FStreamSubscriberMixin {
+  void doSomething() {
+    listen(stream1, (data) {});
+    cancelSubscriptions(); // Cancels stream1
+    listen(stream2, (data) {}); // Creates new subscription but stream1 is still in list
+  }
+}
+```
+
+Create a new instance instead if you need to restart listening.
+</Warning>
+
+### Type Safety
+
+Leverage generic typing for compile-time safety:
+
+```dart
+class TypedListener with FStreamSubscriberMixin {
+  void setupTypedListeners() {
+    // Compiler knows data is List<User>
+    listen<List<User>>(
+      userStream,
+      (users) {
+        for (final user in users) {
+          print(user.name); // Type-safe
+        }
+      },
+    );
+  }
+}
+```
+
+## Comparison with FListener
+
+<Tabs>
+  <Tab title="FStreamSubscriber">
+    **Use when:**
+    - Working with generic Dart streams
+    - Using WebSockets, timers, or custom streams
+    - Need maximum flexibility
+    - Don't need subscription groups
+
+    **Characteristics:**
+    - Works with any `Stream<T>`
+    - Simple list-based tracking
+    - No grouping support
+    - Imported from Firebase UI utilities
+  </Tab>
+
+  <Tab title="FListener">
+    **Use when:**
+    - Working with FSM references (documents, collections, values)
+    - Need subscription grouping
+    - Managing multiple related FSM subscriptions
+
+    **Characteristics:**
+    - Specialized for FSM `ReferenceWrapper`
+    - Automatic stream method selection
+    - Group-based subscription management
+    - Path-based deduplication
+  </Tab>
+</Tabs>
+
+<Info>
+You can use both mixin families in the same class if needed, though this is rarely necessary.
+</Info>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="FListener Mixins" icon="database" href="/mixins/flistener">
+    FSM-specific listener mixins with group management
+  </Card>
+  <Card title="Listener Mixins Overview" icon="list" href="/mixins/overview">
+    Overview of all listener mixin families
+  </Card>
+</CardGroup>

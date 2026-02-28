@@ -1,0 +1,101 @@
+---
+title: "FirestoreDatabaseReference"
+description: "Reference to a specific FSM database"
+---
+
+## Overview
+
+The `FirestoreDatabaseReference` class provides access to collections and documents within a specific database.
+
+## Properties
+
+FirestoreDatabaseReference instances are created via `F.instance.database()` and maintain an internal path delegate to track the database context.
+
+## Methods
+
+### eventDatabase
+
+<ParamField path="database" type="String?" optional>
+  The event database name to use. If not provided, uses the default event database name ('e').
+</ParamField>
+
+Returns a `FirestoreEventDatabaseReference` for the event database.
+
+```dart
+FirestoreEventDatabaseReference eventDatabase([String? database])
+```
+
+**Example:**
+
+```dart
+F.instance
+  .database('production')
+  .eventDatabase('analytics')
+  .collection('events')
+```
+
+### collection
+
+<ParamField path="path" type="String" required>
+  The collection path. Must not be empty.
+</ParamField>
+
+Returns a `CollectionReferenceWrapper` for the specified collection.
+
+```dart
+CollectionReferenceWrapper collection(String path)
+```
+
+**Example:**
+
+```dart
+F.instance.database().collection('users')
+```
+
+### doc
+
+<ParamField path="path" type="String" required>
+  The document path (can include collection segments). Must not be empty.
+</ParamField>
+
+Returns a `DocumentReferenceWrapper` for the specified document.
+
+```dart
+DocumentReferenceWrapper doc(String path)
+```
+
+**Example:**
+
+```dart
+// Direct document reference
+F.instance.database().doc('users/userId')
+
+// Nested document reference
+F.instance.database().doc('users/userId/settings/preferences')
+```
+
+<Note>
+  The document path must have an even number of segments (collection/doc pairs).
+</Note>
+
+## Usage Pattern
+
+Typically, you'll chain methods from the database reference:
+
+```dart
+// Access a collection
+final usersCollection = F.instance
+  .database('myDatabase')
+  .collection('users');
+
+// Access a document
+final userDoc = F.instance
+  .database('myDatabase')
+  .doc('users/user123');
+
+// Access event database
+final events = F.instance
+  .database('myDatabase')
+  .eventDatabase()
+  .collection('events');
+```

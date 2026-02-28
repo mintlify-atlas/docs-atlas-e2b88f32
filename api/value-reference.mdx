@@ -1,0 +1,306 @@
+---
+title: "ValueReferenceWrapper"
+description: "Reference to a specific value within an FSM document"
+---
+
+## Overview
+
+The `ValueReferenceWrapper` class represents a reference to a specific nested value within a document. It allows you to read, write, and listen to changes for individual fields without affecting the entire document.
+
+## Properties
+
+<ResponseField name="path" type="String">
+  The full path to the value including database, document, and value paths.
+  
+  ```dart
+  final valueRef = F.instance
+    .database()
+    .doc('users/user123')
+    .value('profile/email');
+  print(valueRef.path); // 'default/users/user123/profile/email'
+  ```
+</ResponseField>
+
+<ResponseField name="data" type="dynamic">
+  The current data at this value path. Returns null if the value doesn't exist.
+  
+  ```dart
+  final email = valueRef.data;
+  print(email); // 'user@example.com'
+  ```
+</ResponseField>
+
+## Methods
+
+### setData
+
+<ParamField path="data" type="dynamic" required>
+  The value to set at this path. Can be any type (Map, List, String, int, etc.).
+</ParamField>
+
+<ParamField path="merge" type="bool" default="false">
+  If true, merges the data with existing value (only works if both old and new are Maps).
+</ParamField>
+
+<ParamField path="notify" type="bool" default="false">
+  If true, notifies listeners even if the value hasn't changed.
+</ParamField>
+
+Writes data to this specific value path within the document.
+
+```dart
+Future<void> setData(
+  dynamic data, {
+  bool merge = false,
+  bool notify = false,
+})
+```
+
+**Example:**
+
+```dart
+final emailRef = F.instance
+  .database()
+  .doc('users/user123')
+  .value('profile/email');
+
+// Set email value
+await emailRef.setData('newemail@example.com');
+
+// Set nested object
+final profileRef = F.instance
+  .database()
+  .doc('users/user123')
+  .value('profile');
+
+await profileRef.setData({
+  'email': 'user@example.com',
+  'phone': '+1234567890',
+});
+
+// Merge with existing nested object
+await profileRef.setData(
+  {'displayName': 'John'},
+  merge: true,
+);
+```
+
+### updateData
+
+<ParamField path="data" type="dynamic" required>
+  The value to update. Merges with existing data if both are Maps.
+</ParamField>
+
+<ParamField path="notify" type="bool" default="false">
+  If true, notifies listeners even if the value hasn't changed.
+</ParamField>
+
+Updates the value by merging with existing data. Only updates if the value exists.
+
+```dart
+Future<void> updateData(dynamic data, {bool notify = false})
+```
+
+**Example:**
+
+```dart
+final profileRef = F.instance
+  .database()
+  .doc('users/user123')
+  .value('profile');
+
+await profileRef.updateData({
+  'lastUpdated': DateTime.now(),
+});
+```
+
+### notify
+
+Notifies all listeners without changing the value. Useful for triggering UI updates.
+
+```dart
+void notify()
+```
+
+**Example:**
+
+```dart
+final valueRef = F.instance
+  .database()
+  .doc('users/user123')
+  .value('status');
+
+// Trigger listeners to re-render
+valueRef.notify();
+```
+
+### values
+
+<ParamField path="includeMetadataChanges" type="bool" default="false">
+  Whether to include metadata changes in the stream.
+</ParamField>
+
+Returns a stream of changes to this specific value.
+
+```dart
+Stream<dynamic> values({bool includeMetadataChanges = false})
+```
+
+**Returns:** A `Stream` that emits the value whenever it changes.
+
+<Note>
+  Updating a value only updates direct value listeners. Parent or child streams are not updated. This is a performance optimization. To observe all path updates, listen to the root `DocumentSnapshotWrapper`.
+</Note>
+
+**Example:**
+
+```dart
+final emailRef = F.instance
+  .database()
+  .doc('users/user123')
+  .value('profile/email');
+
+emailRef.values().listen((email) {
+  print('Email changed to: $email');
+});
+```
+
+### close
+
+Closes the value stream if there are no active listeners.
+
+```dart
+void close()
+```
+
+**Example:**
+
+```dart
+valueRef.close();
+```
+
+## Usage Examples
+
+### Working with Primitive Values
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// String value
+final nameRef = doc.value('name');
+await nameRef.setData('John Doe');
+print(nameRef.data); // 'John Doe'
+
+// Number value
+final ageRef = doc.value('age');
+await ageRef.setData(30);
+
+// Boolean value
+final verifiedRef = doc.value('verified');
+await verifiedRef.setData(true);
+```
+
+### Working with Nested Paths
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+
+// Deep nested value
+final cityRef = doc.value('profile/address/city');
+await cityRef.setData('San Francisco');
+
+// Multiple levels
+final settingsRef = doc.value('settings/notifications/email');
+await settingsRef.setData(true);
+```
+
+### Listening to Specific Values
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+final statusRef = doc.value('status');
+
+// Listen to status changes only
+statusRef.values().listen((status) {
+  print('User status: $status');
+  if (status == 'offline') {
+    // Handle offline state
+  }
+});
+
+// Update status
+await statusRef.setData('online');
+await statusRef.setData('busy');
+await statusRef.setData('offline');
+```
+
+### Optimized UI Updates
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+final emailRef = doc.value('profile/email');
+
+// In a Flutter widget - only rebuilds when email changes
+StreamBuilder<dynamic>(
+  stream: emailRef.values(),
+  builder: (context, snapshot) {
+    if (!snapshot.hasData) {
+      return Text('No email');
+    }
+    
+    return Text('Email: ${snapshot.data}');
+  },
+)
+```
+
+### Merging Nested Objects
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+final profileRef = doc.value('profile');
+
+// Initial profile
+await profileRef.setData({
+  'name': 'John Doe',
+  'email': 'john@example.com',
+});
+
+// Merge additional fields
+await profileRef.setData(
+  {
+    'phone': '+1234567890',
+    'avatar': 'https://example.com/avatar.jpg',
+  },
+  merge: true,
+);
+
+// Result: profile now contains all 4 fields
+```
+
+## Performance Considerations
+
+<Warning>
+  Value streams only emit when the specific value changes. They do not propagate updates to parent documents or child values. This isolation provides better performance but requires careful stream management.
+</Warning>
+
+```dart
+final doc = F.instance.database().doc('users/user123');
+final emailRef = doc.value('profile/email');
+final profileRef = doc.value('profile');
+
+// Listening to email
+emailRef.values().listen((email) {
+  print('Email: $email'); // Only fires when email changes
+});
+
+// Updating the entire profile won't trigger the email listener
+await profileRef.setData({
+  'name': 'Jane Doe',
+  'email': 'jane@example.com',
+});
+
+// To observe all changes, listen to the document instead
+doc.snapshots().listen((snapshot) {
+  print('Document: ${snapshot.data}'); // Fires for all changes
+});
+```

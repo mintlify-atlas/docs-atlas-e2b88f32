@@ -1,0 +1,472 @@
+---
+title: 'Documents'
+description: 'Master document operations, snapshots, and reactive updates in FSM'
+---
+
+## Overview
+
+Documents are the fundamental data storage units in FSM. Each document contains structured data (typically a Map) and is identified by a unique ID within its collection.
+
+## DocumentReferenceWrapper
+
+The `DocumentReferenceWrapper` class represents a reference to a document and provides methods for reading and writing data.
+
+### API Signature
+
+```dart
+class DocumentReferenceWrapper extends ReferenceWrapper {
+  // Properties
+  String get documentPath;
+  String get documentID;
+  String get path;
+  DocumentSnapshotWrapper get snapshot;
+  BehaviorSubject<DocumentSnapshotWrapper> get streamController;
+  
+  // Methods
+  Future<void> setData(dynamic data, {bool merge = false, bool notify = false});
+  Future<void> updateData(dynamic data, {bool notify = false});
+  void notify();
+  Future<DocumentSnapshotWrapper> get();
+  Stream<DocumentSnapshotWrapper> snapshots({bool includeMetadataChanges = false});
+  CollectionReferenceWrapper collection(String path);
+  CollectionReferenceWrapper parent();
+  ValueReferenceWrapper value(String path);
+  void close();
+}
+```
+
+## Creating Document References
+
+### Explicit Document ID
+
+```dart
+// Reference a specific document
+final userDoc = F.instance
+  .collection('users')
+  .doc('user123');
+```
+
+### Auto-Generated ID
+
+```dart
+// Generate a random 20-character ID
+final newDoc = F.instance
+  .collection('users')
+  .doc();
+
+print('Auto-generated ID: ${newDoc.documentID}');
+// Example: 'x7K2mP9vN3qR8tL4wH6j'
+```
+
+<Note>
+  Auto-generated IDs use Firebase's algorithm: 20 characters from `[A-Za-z0-9]`, ensuring global uniqueness.
+</Note>
+
+## Writing Data
+
+### setData()
+
+Set or replace document data:
+
+```dart
+final userDoc = F.instance.collection('users').doc('user123');
+
+// Set data (replaces existing)
+await userDoc.setData({
+  'name': 'Alice',
+  'age': 30,
+  'email': 'alice@example.com',
+});
+```
+
+**Method Signature:**
+```dart
+Future<void> setData(
+  dynamic data,
+  {bool merge = false, bool notify = false}
+)
+```
+
+**Parameters:**
+- `data`: The data to set (typically a Map, but can be any type)
+- `merge`: If `true`, merge with existing data instead of replacing
+- `notify`: If `true`, trigger listeners even if data hasn't changed
+
+### Merge Behavior
+
+```dart
+// Initial data
+await userDoc.setData({
+  'name': 'Alice',
+  'age': 30,
+  'settings': {'theme': 'dark', 'notifications': true}
+});
+
+// Merge new data
+await userDoc.setData({
+  'age': 31,
+  'settings': {'theme': 'light'}
+}, merge: true);
+
+// Result: {
+//   'name': 'Alice',           // preserved
+//   'age': 31,                 // updated
+//   'settings': {
+//     'theme': 'light',        // updated
+//     'notifications': true    // preserved
+//   }
+// }
+```
+
+<Tip>
+  Use `merge: true` to update specific fields without losing other data, similar to Firebase's `merge` option.
+</Tip>
+
+### updateData()
+
+Update data only if the document exists:
+
+```dart
+// Updates only if document already exists
+await userDoc.updateData({'lastSeen': FTimestamp.now()});
+```
+
+**Method Signature:**
+```dart
+Future<void> updateData(dynamic data, {bool notify = false})
+```
+
+<Accordion title="setData() vs updateData()">
+  **Key Differences:**
+  
+  | Method | Behavior | Use Case |
+  |--------|----------|----------|
+  | `setData()` | Creates or replaces document | Initial data creation, full replacements |
+  | `setData(merge: true)` | Creates or merges with existing | Partial updates, preserving other fields |
+  | `updateData()` | Only updates if exists | Modifying known documents |
+  
+  In FSM's implementation, `updateData()` checks if the document exists in memory before updating. If not found, it silently does nothing.
+</Accordion>
+
+### Notify Without Data Change
+
+Trigger listeners without changing data:
+
+```dart
+// Trigger all listeners for this document
+userDoc.notify();
+
+// Or use the notify parameter
+await userDoc.setData(currentData, notify: true);
+```
+
+<Note>
+  The `notify()` method is useful when you need to signal dependent widgets to rebuild without actually changing the underlying data.
+</Note>
+
+## Reading Data
+
+### get()
+
+Fetch the current document snapshot:
+
+```dart
+final snapshot = await userDoc.get();
+
+if (snapshot.exists) {
+  print('User data: ${snapshot.data}');
+  print('User name: ${snapshot['name']}');
+} else {
+  print('Document does not exist');
+}
+```
+
+### Synchronous Snapshot
+
+Get the current snapshot without async:
+
+```dart
+// Get immediate snapshot (may be empty if not yet initialized)
+final currentSnapshot = userDoc.snapshot;
+
+if (currentSnapshot.exists) {
+  print('Current data: ${currentSnapshot.data}');
+}
+```
+
+## Document Snapshots
+
+### DocumentSnapshotWrapper
+
+A snapshot represents the state of a document at a specific point in time:
+
+```dart
+class DocumentSnapshotWrapper {
+  // Properties
+  dynamic data;                           // The document data
+  String get path;                        // Full path including database
+  String get documentPath;                // Document path only
+  String get documentID;                  // Document ID
+  bool get exists;                        // Whether document has data
+  DocumentReferenceWrapper get reference; // Reference to the document
+  
+  // Methods
+  dynamic operator [](String key);        // Access field by key
+  dynamic value(String path);             // Access nested value by path
+}
+```
+
+### Accessing Snapshot Data
+
+```dart
+final snapshot = await userDoc.get();
+
+// Access via data property
+final userData = snapshot.data as Map<String, dynamic>;
+print(userData['name']);
+
+// Access via bracket operator
+print(snapshot['name']);
+
+// Access nested values
+print(snapshot.value('settings/theme'));
+
+// Check existence
+if (snapshot.exists) {
+  // Document has data
+}
+```
+
+## Reactive Snapshots
+
+### Stream Document Changes
+
+Listen to real-time document updates:
+
+```dart
+F.instance
+  .collection('users')
+  .doc('user123')
+  .snapshots()
+  .listen((snapshot) {
+    if (snapshot.exists) {
+      print('Updated data: ${snapshot.data}');
+    }
+  });
+```
+
+### Practical Example: User Profile Widget
+
+```dart
+class UserProfileWidget extends StatelessWidget {
+  final String userId;
+  
+  const UserProfileWidget(this.userId);
+  
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshotWrapper>(
+      stream: F.instance.collection('users').doc(userId).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return CircularProgressIndicator();
+        }
+        
+        final userSnapshot = snapshot.data!;
+        if (!userSnapshot.exists) {
+          return Text('User not found');
+        }
+        
+        final userData = userSnapshot.data as Map<String, dynamic>;
+        return Column(
+          children: [
+            Text('Name: ${userData['name']}'),
+            Text('Email: ${userData['email']}'),
+          ],
+        );
+      },
+    );
+  }
+}
+```
+
+<Tip>
+  FSM's reactive snapshots integrate seamlessly with Flutter's `StreamBuilder` widget for declarative UI updates.
+</Tip>
+
+## Document Metadata
+
+### DocumentEvent
+
+Every document snapshot includes metadata via `DocumentEvent`:
+
+```dart
+class DocumentEvent {
+  String? event;           // Optional event name
+  FTimestamp timestamp;    // When the event occurred
+  dynamic data;            // The actual data
+}
+```
+
+Access via snapshot:
+```dart
+final snapshot = await userDoc.get();
+final event = snapshot.documentEvent;
+
+if (event != null) {
+  print('Timestamp: ${event.timestamp.toDate()}');
+  print('Event: ${event.event}');
+}
+```
+
+## Nested Collections
+
+Documents can contain subcollections:
+
+```dart
+// Access a subcollection from a document
+final comments = F.instance
+  .collection('posts')
+  .doc('post123')
+  .collection('comments');
+
+// Add a comment
+await comments.add({
+  'text': 'Great post!',
+  'author': 'Alice',
+  'timestamp': FTimestamp.now(),
+});
+```
+
+## Document Properties
+
+### Path Information
+
+```dart
+final doc = F.instance.collection('users').doc('user123');
+
+// Document ID
+print(doc.documentID); // 'user123'
+
+// Document path (without database)
+print(doc.documentPath); // 'users/user123'
+
+// Full path (with database)
+print(doc.path); // 'default/users/user123'
+```
+
+### Parent Collection
+
+```dart
+final doc = F.instance.collection('users').doc('user123');
+
+// Get parent collection
+final parent = doc.parent();
+print(parent.collectionID); // 'users'
+```
+
+## Stream Management
+
+### Stream Controller Access
+
+```dart
+final doc = F.instance.collection('users').doc('user123');
+
+// Get underlying BehaviorSubject
+final controller = doc.streamController;
+
+// Check for listeners
+if (controller.hasListener) {
+  print('Document is being observed');
+}
+
+// Get current value
+if (controller.hasValue) {
+  final snapshot = controller.value;
+  print('Current data: ${snapshot.data}');
+}
+```
+
+### Closing Streams
+
+```dart
+// Close document stream when done
+doc.close();
+```
+
+<Note>
+  FSM manages stream lifecycle automatically. Manual cleanup is rarely needed unless you're optimizing memory usage.
+</Note>
+
+## Complete Example: Todo Item
+
+```dart
+class TodoItem {
+  final String id;
+  late final DocumentReferenceWrapper _docRef;
+  
+  TodoItem(this.id) {
+    _docRef = F.instance.collection('todos').doc(id);
+  }
+  
+  // Create new todo
+  Future<void> create(String title) async {
+    await _docRef.setData({
+      'title': title,
+      'completed': false,
+      'createdAt': FTimestamp.now(),
+    });
+  }
+  
+  // Update title
+  Future<void> updateTitle(String newTitle) async {
+    await _docRef.updateData({'title': newTitle});
+  }
+  
+  // Toggle completion
+  Future<void> toggleCompleted() async {
+    final snapshot = await _docRef.get();
+    final completed = snapshot['completed'] as bool;
+    await _docRef.updateData({'completed': !completed});
+  }
+  
+  // Delete todo
+  Future<void> delete() async {
+    await _docRef.setData(null);
+  }
+  
+  // Stream changes
+  Stream<DocumentSnapshotWrapper> watch() {
+    return _docRef.snapshots();
+  }
+}
+```
+
+## Best Practices
+
+1. **Structure your data**: Use Maps for structured data, making fields easily accessible.
+
+2. **Use typed accessors**: Cast snapshot data to specific types for type safety:
+   ```dart
+   final userData = snapshot.data as Map<String, dynamic>;
+   final name = userData['name'] as String;
+   ```
+
+3. **Check existence**: Always check `snapshot.exists` before accessing data.
+
+4. **Leverage merge**: Use `merge: true` for partial updates to preserve other fields.
+
+5. **Use notify sparingly**: Only use `notify()` when you need to force UI updates without data changes.
+
+6. **Handle null safely**: Documents may not exist; always handle null cases.
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Collections" icon="folder" href="/concepts/collections">
+    Learn about organizing documents in collections
+  </Card>
+  <Card title="Values" icon="code" href="/concepts/values">
+    Access and update nested document fields
+  </Card>
+</CardGroup>

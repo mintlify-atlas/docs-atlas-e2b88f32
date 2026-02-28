@@ -1,0 +1,546 @@
+---
+title: Notifications
+description: Signal state changes without modifying data using the notify() method
+---
+
+## Overview
+
+The `notify()` method triggers stream updates **without changing any data**. This is useful for signaling events, refreshing UI, or coordinating between components when you need listeners to react but the underlying data hasn't changed.
+
+## Basic Usage
+
+```dart
+final ref = F.instance.doc('users/alice');
+
+// Trigger listeners without changing data
+ref.notify();
+```
+
+## Implementation
+
+From `f_wrapper.dart:485-488`:
+
+```dart
+// ignore: avoid_void_async
+void notify() async {
+  _printStackTrace(snapshot);
+  return f._setDocumentData(this, null, notify: true);
+}
+```
+
+The `notify()` method calls `_setDocumentData()` with `null` data and `notify: true`.
+
+## How It Works
+
+From `f_wrapper.dart:148-162`, when `notify: true`:
+
+```dart
+if (notify) {
+  // If this is a notify operation, notify listeners directly.
+  if (data == null) {
+    snapshots[pathDelegate.path]?.add(snapshot);
+    if (isValue) {
+      values[pathDelegate.valuePathFull]?.add(data);
+    }
+    collections[pathDelegate.parentPath]?.add(documentReference);
+    _globalObserverStream.add(snapshot);
+    // _printStackTrace(snapshot);
+    return;
+  }
+}
+```
+
+### Key Points:
+
+1. **No data change**: The snapshot is re-emitted with existing data
+2. **Triggers streams**: All listeners receive the update
+3. **Global observer**: The global observer is notified
+4. **Same data**: `snapshot.data` remains unchanged
+
+## Use Cases
+
+### 1. Manual Refresh Trigger
+
+Trigger UI rebuild without data changes:
+
+```dart
+class UserProfile extends StatelessWidget {
+  final String userId;
+  final DocumentReferenceWrapper userRef;
+
+  UserProfile(this.userId)
+      : userRef = F.instance.doc('users/$userId');
+
+  void refreshUI() {
+    // Triggers rebuild without changing data
+    userRef.notify();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: userRef.snapshots(),
+      builder: (context, snapshot) {
+        // Rebuilds on notify() even if data unchanged
+        return UserWidget(data: snapshot.data?.data);
+      },
+    );
+  }
+}
+```
+
+### 2. Event Coordination
+
+Signal events across components:
+
+```dart
+class GameController {
+  final DocumentReferenceWrapper gameRef;
+
+  GameController(String gameId)
+      : gameRef = F.instance
+            .eventDatabase()
+            .doc('games/$gameId');
+
+  // Signal round start without data changes
+  void signalRoundStart() {
+    gameRef.notify();
+  }
+
+  // Players listen for the signal
+  Stream<DocumentSnapshotWrapper> get roundStartSignal => 
+      gameRef.snapshots();
+}
+
+// Usage in player component:
+class Player {
+  void listenForRoundStart(GameController game) {
+    game.roundStartSignal.listen((_) {
+      print('Round started!');
+      startPlayerTimer();
+    });
+  }
+
+  void startPlayerTimer() {
+    // Start countdown, etc.
+  }
+}
+```
+
+### 3. Cache Invalidation
+
+```dart
+class CacheManager {
+  final DocumentReferenceWrapper _cacheRef;
+  final Map<String, dynamic> _localCache = {};
+
+  CacheManager()
+      : _cacheRef = F.instance.doc('system/cache_invalidation');
+
+  void invalidateCache() {
+    // Signal all listeners to clear their caches
+    _cacheRef.notify();
+  }
+
+  void listenForInvalidation() {
+    _cacheRef.snapshots().listen((_) {
+      _localCache.clear();
+      print('Cache cleared');
+    });
+  }
+}
+```
+
+### 4. Synchronization Points
+
+```dart
+class SyncCoordinator {
+  final DocumentReferenceWrapper _syncRef;
+
+  SyncCoordinator()
+      : _syncRef = F.instance
+            .eventDatabase()
+            .doc('sync/checkpoint');
+
+  // Signal that a sync point has been reached
+  void signalSyncPoint() {
+    _syncRef.notify();
+  }
+
+  // Wait for sync signal
+  Future<void> waitForSync() async {
+    await _syncRef.snapshots().first;
+  }
+}
+
+// Usage:
+final coordinator = SyncCoordinator();
+
+// Component A
+await performOperation();
+coordinator.signalSyncPoint();
+
+// Component B  
+await coordinator.waitForSync();
+print('Component A finished, proceeding...');
+```
+
+### 5. Heartbeat/Keepalive
+
+```dart
+class HeartbeatService {
+  final DocumentReferenceWrapper _heartbeatRef;
+  Timer? _timer;
+
+  HeartbeatService(String serviceId)
+      : _heartbeatRef = F.instance
+            .eventDatabase()
+            .doc('heartbeats/$serviceId');
+
+  void startHeartbeat({Duration interval = const Duration(seconds: 5)}) {
+    _timer = Timer.periodic(interval, (_) {
+      _heartbeatRef.notify();
+    });
+  }
+
+  void stopHeartbeat() {
+    _timer?.cancel();
+  }
+
+  // Monitor heartbeat
+  Stream<DateTime> get heartbeat => _heartbeatRef
+      .snapshots()
+      .map((_) => DateTime.now());
+}
+
+// Usage:
+class ServiceMonitor {
+  void monitorService(String serviceId) {
+    final heartbeat = HeartbeatService(serviceId);
+    
+    heartbeat.heartbeat
+        .timeout(
+          Duration(seconds: 10),
+          onTimeout: (sink) {
+            print('Service $serviceId timeout!');
+          },
+        )
+        .listen((timestamp) {
+          print('Service alive at $timestamp');
+        });
+  }
+}
+```
+
+## Combining notify with Data Updates
+
+You can also use `notify: true` parameter with `setData()` and `updateData()`:
+
+### setData with notify
+
+From `f_wrapper.dart:471-477`:
+
+```dart
+Future<void> setData(
+  dynamic data, {
+  bool merge = false,
+  bool notify = false,
+}) {
+  return f._setDocumentData(this, data, merge: merge, notify: notify);
+}
+```
+
+```dart
+// Update data AND guarantee stream emission
+await ref.setData(
+  {'name': 'Alice'},
+  notify: true,
+);
+```
+
+### updateData with notify
+
+From `f_wrapper.dart:479-481`:
+
+```dart
+Future<void> updateData(dynamic data, {bool notify = false}) {
+  return f._updateDocumentData(this, data, notify: notify);
+}
+```
+
+```dart
+// Update data AND guarantee stream emission
+await ref.updateData(
+  {'lastSeen': DateTime.now().toIso8601String()},
+  notify: true,
+);
+```
+
+### When to Use notify Parameter
+
+The `notify` parameter forces a stream update even if data is unchanged:
+
+```dart
+final counterRef = F.instance.doc('counters/clicks');
+
+// Normal behavior: no update if value unchanged
+await counterRef.value('count').setData(5);
+await counterRef.value('count').setData(5);  // No stream update (same value)
+
+// With notify: always updates streams
+await counterRef.value('count').setData(5, notify: true);  // Stream updates
+await counterRef.value('count').setData(5, notify: true);  // Stream updates again
+```
+
+## Value References Also Support notify()
+
+From `f_wrapper.dart:556-561`:
+
+```dart
+// ignore: avoid_void_async
+void notify() async {
+  DocumentReferenceWrapper documentReferenceWrapper =
+      f.doc(pathDelegate.documentPathComponents.removeLast());
+  _printStackTrace(documentReferenceWrapper.snapshot);
+  return f._setDocumentData(documentReferenceWrapper, null, notify: true);
+}
+```
+
+```dart
+final valueRef = F.instance.doc('users/alice').value('status');
+
+// Notify value listeners
+valueRef.notify();
+```
+
+## Notification Flow
+
+When you call `notify()`, the following happens:
+
+1. Current snapshot is retrieved
+2. Snapshot is re-added to the document stream
+3. Value streams are notified (if applicable)
+4. Collection stream is notified
+5. Global observer receives the notification
+
+```dart
+// From f_wrapper.dart:154-159
+snapshots[pathDelegate.path]?.add(snapshot);
+if (isValue) {
+  values[pathDelegate.valuePathFull]?.add(data);
+}
+collections[pathDelegate.parentPath]?.add(documentReference);
+_globalObserverStream.add(snapshot);
+```
+
+## Advanced Patterns
+
+### Pattern 1: Event Bus
+
+```dart
+class EventBus {
+  final DocumentReferenceWrapper _eventRef;
+
+  EventBus(String channel)
+      : _eventRef = F.instance
+            .eventDatabase()
+            .doc('events/$channel');
+
+  void emit(String eventName, [dynamic data]) {
+    if (data != null) {
+      _eventRef.value('last').setData({
+        'event': eventName,
+        'data': data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }, notify: true);
+    } else {
+      _eventRef.value('last').setData({
+        'event': eventName,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      }, notify: true);
+    }
+  }
+
+  void emitSignal(String eventName) {
+    // Store event name, then signal
+    _eventRef.value('last/event').setData(eventName);
+    _eventRef.notify();
+  }
+
+  Stream<Map<String, dynamic>> on(String eventName) {
+    return _eventRef
+        .value('last')
+        .values()
+        .where((event) => event?['event'] == eventName)
+        .cast<Map<String, dynamic>>();
+  }
+}
+
+// Usage:
+final bus = EventBus('app');
+
+// Emit with data
+bus.emit('user_login', {'userId': '123'});
+
+// Listen for events
+bus.on('user_login').listen((event) {
+  print('User logged in: ${event['data']}');
+});
+```
+
+### Pattern 2: State Machine Signals
+
+```dart
+class StateMachine {
+  final DocumentReferenceWrapper _stateRef;
+  String _currentState;
+
+  StateMachine(String machineId, String initialState)
+      : _stateRef = F.instance.doc('state_machines/$machineId'),
+        _currentState = initialState {
+    _stateRef.setData({'state': initialState});
+  }
+
+  Future<void> transition(String newState) async {
+    _currentState = newState;
+    await _stateRef.setData(
+      {'state': newState},
+      notify: true,  // Always signal state changes
+    );
+  }
+
+  void signalStateEvent() {
+    // Trigger reactions without changing state
+    _stateRef.notify();
+  }
+
+  Stream<String> get stateChanges => _stateRef
+      .snapshots()
+      .map((snap) => snap.data['state'] as String);
+}
+```
+
+### Pattern 3: Batch Operation Completion
+
+```dart
+class BatchProcessor {
+  final DocumentReferenceWrapper _batchRef;
+
+  BatchProcessor(String batchId)
+      : _batchRef = F.instance.doc('batches/$batchId');
+
+  Future<void> processBatch(List<String> items) async {
+    await _batchRef.setData({
+      'total': items.length,
+      'completed': 0,
+      'status': 'processing',
+    });
+
+    for (int i = 0; i < items.length; i++) {
+      await processItem(items[i]);
+      
+      // Update progress
+      await _batchRef.setData({
+        'completed': i + 1,
+      }, merge: true, notify: true);  // Force update even if same
+    }
+
+    // Signal completion
+    await _batchRef.setData({
+      'status': 'complete',
+    }, merge: true);
+    
+    _batchRef.notify();  // Final notification
+  }
+
+  Future<void> processItem(String item) async {
+    await Future.delayed(Duration(milliseconds: 100));
+  }
+
+  Stream<double> get progress => _batchRef.snapshots().map((snap) {
+    final total = snap.data['total'] as int;
+    final completed = snap.data['completed'] as int;
+    return completed / total;
+  });
+}
+```
+
+## notify() vs notify Parameter
+
+```dart
+// notify() method: No data change
+ref.notify();  // Signals only
+
+// notify parameter: Data change + forced signal
+await ref.setData(data, notify: true);  // Updates + signals
+```
+
+<Note>
+Use `notify()` when you want to signal without any data changes. Use `notify: true` parameter when you want to ensure streams update even if data is unchanged.
+</Note>
+
+## Best Practices
+
+<Tip>
+**Use event databases for signals**: Combine `notify()` with event databases for clean separation of ephemeral signals from persistent data.
+</Tip>
+
+<Tip>
+**Document your signals**: When using `notify()` for coordination, clearly document what the signal means and when it's triggered.
+</Tip>
+
+<Warning>
+**Don't overuse notify**: While powerful, excessive notifications can make debugging difficult. Use sparingly and with clear purpose.
+</Warning>
+
+## Common Patterns
+
+### Debounced Notifications
+
+```dart
+class DebouncedNotifier {
+  final DocumentReferenceWrapper ref;
+  Timer? _debounceTimer;
+  final Duration debounceTime;
+
+  DebouncedNotifier(this.ref, {this.debounceTime = const Duration(milliseconds: 300)});
+
+  void notify() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(debounceTime, () {
+      ref.notify();
+    });
+  }
+
+  void dispose() {
+    _debounceTimer?.cancel();
+  }
+}
+```
+
+### Throttled Notifications
+
+```dart
+class ThrottledNotifier {
+  final DocumentReferenceWrapper ref;
+  DateTime? _lastNotify;
+  final Duration throttleTime;
+
+  ThrottledNotifier(this.ref, {this.throttleTime = const Duration(seconds: 1)});
+
+  void notify() {
+    final now = DateTime.now();
+    if (_lastNotify == null || now.difference(_lastNotify!) >= throttleTime) {
+      ref.notify();
+      _lastNotify = now;
+    }
+  }
+}
+```
+
+## Related
+
+- [Event Databases](/advanced/event-databases) - Organize ephemeral signals
+- [Global Observer](/advanced/global-observer) - Monitor all notifications
+- [Documents](/concepts/documents) - Understanding reactive updates
+- [Merge Operations](/advanced/merge-operations) - Combine with `notify: true`

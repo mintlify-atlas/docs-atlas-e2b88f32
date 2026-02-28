@@ -1,0 +1,245 @@
+---
+title: DocumentEvent
+description: Represents a document change event with timestamp and data
+---
+
+## Overview
+
+The `DocumentEvent` class encapsulates a document change event, including the data payload, an optional event name, and an automatic timestamp. It's used internally by FSM to track document changes.
+
+## Class Definition
+
+```dart
+class DocumentEvent {
+  String? event;
+  late FTimestamp timestamp;
+  dynamic data;
+
+  DocumentEvent(this.data, {this.event, FTimestamp? timestamp})
+      : timestamp = timestamp ?? FTimestamp.now();
+}
+```
+
+## Constructor
+
+### DocumentEvent()
+
+Creates a new document event.
+
+```dart
+DocumentEvent(
+  dynamic data,
+  {
+    String? event,
+    FTimestamp? timestamp,
+  }
+)
+```
+
+**Parameters:**
+- `data` (dynamic, required): The document data payload
+- `event` (String?, optional): An optional event name or identifier
+- `timestamp` (FTimestamp?, optional): The event timestamp. Defaults to `FTimestamp.now()` if not provided
+
+**Example:**
+```dart
+// Create event with current timestamp
+final event1 = DocumentEvent({'name': 'John', 'age': 30});
+
+// Create event with custom timestamp
+final customTime = FTimestamp.fromDate(DateTime(2024, 1, 1));
+final event2 = DocumentEvent(
+  {'status': 'active'},
+  event: 'user_activated',
+  timestamp: customTime,
+);
+```
+
+## Properties
+
+<ResponseField name="data" type="dynamic">
+  The document data payload. Can be any type including Map, List, String, int, etc.
+</ResponseField>
+
+<ResponseField name="event" type="String?">
+  An optional event name or identifier. Used to categorize or label the event.
+</ResponseField>
+
+<ResponseField name="timestamp" type="FTimestamp">
+  The timestamp when the event occurred. Automatically set to current time if not provided in constructor.
+</ResponseField>
+
+## Methods
+
+### toMap()
+
+Converts the document event to a Map representation.
+
+```dart
+Map<String, dynamic> toMap()
+```
+
+**Returns:** A Map containing the event properties:
+- `'e'`: event name (String?)
+- `'t'`: timestamp (FTimestamp)
+- `'d'`: data (dynamic)
+
+**Example:**
+```dart
+final event = DocumentEvent(
+  {'name': 'Alice'},
+  event: 'user_created',
+);
+
+final map = event.toMap();
+print(map);
+// Output: {e: user_created, t: Timestamp(...), d: {name: Alice}}
+```
+
+### value
+
+Gets the Map representation of the event (same as `toMap()`).
+
+```dart
+Map<String, dynamic> get value
+```
+
+**Returns:** A Map containing the event properties
+
+**Example:**
+```dart
+final event = DocumentEvent({'status': 'ready'});
+final eventMap = event.value;
+```
+
+### toString()
+
+Converts the event to a string representation.
+
+```dart
+String toString()
+```
+
+**Returns:** String representation of the event Map
+
+**Example:**
+```dart
+final event = DocumentEvent({'count': 42});
+print(event);
+// Output: {e: null, t: Timestamp(...), d: {count: 42}}
+```
+
+## Usage Examples
+
+### Creating Simple Events
+
+```dart
+// Event with just data
+final event1 = DocumentEvent({
+  'name': 'Product A',
+  'price': 29.99,
+});
+
+print('Data: ${event1.data}');
+print('Timestamp: ${event1.timestamp}');
+```
+
+### Creating Named Events
+
+```dart
+// Event with name for categorization
+final event2 = DocumentEvent(
+  {'userId': 'user123', 'action': 'login'},
+  event: 'user_login',
+);
+
+print('Event type: ${event2.event}');
+print('Event data: ${event2.data}');
+print('Occurred at: ${event2.timestamp.toDate()}');
+```
+
+### Creating Historical Events
+
+```dart
+// Event with specific timestamp for historical data
+final historicalTime = FTimestamp.fromDate(
+  DateTime(2024, 1, 15, 10, 30),
+);
+
+final event3 = DocumentEvent(
+  {'temperature': 72.5, 'humidity': 45},
+  event: 'sensor_reading',
+  timestamp: historicalTime,
+);
+
+print('Reading from: ${event3.timestamp.toDate()}');
+```
+
+### Converting to Map Format
+
+```dart
+final event = DocumentEvent(
+  {'status': 'completed', 'progress': 100},
+  event: 'task_completed',
+);
+
+// Convert to map for storage or transmission
+final eventMap = event.toMap();
+
+// Access map fields
+print('Event name: ${eventMap['e']}');
+print('Timestamp: ${eventMap['t']}');
+print('Data: ${eventMap['d']}');
+```
+
+### Working with DocumentSnapshot
+
+```dart
+// Document events are typically accessed through snapshots
+F.instance.doc('tasks/task1').snapshots().listen((snapshot) {
+  if (snapshot.documentEvent != null) {
+    final event = snapshot.documentEvent!;
+    
+    print('Event occurred at: ${event.timestamp.toDate()}');
+    
+    if (event.event != null) {
+      print('Event type: ${event.event}');
+    }
+    
+    print('Current data: ${event.data}');
+  }
+});
+```
+
+### Event Timestamps
+
+```dart
+// Compare event times
+final event1 = DocumentEvent({'version': 1});
+
+// Wait a moment
+await Future.delayed(Duration(milliseconds: 100));
+
+final event2 = DocumentEvent({'version': 2});
+
+// Compare timestamps
+if (event2.timestamp.compareTo(event1.timestamp) > 0) {
+  print('Event 2 occurred after Event 1');
+}
+
+print('Time difference: ${event2.timestamp.millisecondsSinceEpoch - event1.timestamp.millisecondsSinceEpoch}ms');
+```
+
+## Internal Usage
+
+`DocumentEvent` is primarily used internally by FSM to wrap document data with metadata. You'll typically encounter it when:
+
+- Accessing `snapshot.documentEvent` on a DocumentSnapshotWrapper
+- Implementing custom FSM extensions
+- Debugging state changes with timestamps
+
+## See Also
+
+- [DocumentSnapshotWrapper](/api/document-snapshot) - Container for document events
+- [FTimestamp](/api/ftimestamp) - Timestamp implementation
+- [DocumentReferenceWrapper](/api/document-reference) - Document references

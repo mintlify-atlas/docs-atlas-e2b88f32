@@ -1,0 +1,282 @@
+---
+title: 'FCollectionStreamBuilder'
+description: 'A widget that builds itself based on collection snapshots with event database support'
+---
+
+## Overview
+
+`FCollectionStreamBuilder` is a specialized widget for listening to FSM collection changes. It supports both regular databases and event databases, with optional data transformation capabilities.
+
+## Type Signature
+
+```dart
+class FCollectionStreamBuilder<Object> extends StatefulWidget {
+  final String collection;
+  final StreamWidgetBuilder<Object> builder;
+  final dynamic initialData;
+  final FunctionMap<dynamic>? map;
+  final String? database;
+  final String? eventDatabase;
+
+  const FCollectionStreamBuilder({
+    super.key,
+    required this.collection,
+    required this.builder,
+    this.initialData,
+    this.map,
+    this.database,
+    this.eventDatabase,
+  });
+}
+```
+
+## Type Definitions
+
+```dart
+typedef StreamWidgetBuilder<T> = Widget Function(BuildContext context, T value);
+typedef FunctionMap<T> = T Function(T value);
+```
+
+## Parameters
+
+<ParamField path="collection" type="String" required>
+  The collection path to listen to. For example: `'users'`, `'posts'`, or `'messages'`.
+</ParamField>
+
+<ParamField path="builder" type="StreamWidgetBuilder<Object>" required>
+  A function that builds a widget based on the current collection data. Receives `BuildContext` and the typed value.
+</ParamField>
+
+<ParamField path="initialData" type="dynamic">
+  Initial data to display before the first snapshot arrives. Defaults to null.
+</ParamField>
+
+<ParamField path="map" type="FunctionMap<dynamic>?">
+  Optional mapping function to transform collection data before passing to the builder. Useful for converting raw data to model objects.
+</ParamField>
+
+<ParamField path="database" type="String?">
+  Optional database name to use for the collection. If not specified, uses the default database instance.
+</ParamField>
+
+<ParamField path="eventDatabase" type="String?">
+  Optional event database name. Used for event-driven architectures where collection changes are tracked in a separate event database.
+</ParamField>
+
+## Usage Example
+
+```dart
+FCollectionStreamBuilder<List<Map<String, dynamic>>>(
+  collection: 'users',
+  initialData: [],
+  builder: (context, users) {
+    return ListView.builder(
+      itemCount: users.length,
+      itemBuilder: (context, index) {
+        return ListTile(
+          title: Text(users[index]['name']),
+        );
+      },
+    );
+  },
+)
+```
+
+## How It Works
+
+<Note>
+  `FCollectionStreamBuilder` automatically manages collection stream lifecycle, including proper cleanup when the widget is disposed.
+</Note>
+
+1. **Initialization**: Creates a snapshot stream for the specified collection
+2. **Stream Management**: Subscribes to collection snapshots via the database and optional event database
+3. **Data Extraction**: Extracts data from `DocumentReferenceWrapper.snapshot.data`
+4. **Optional Mapping**: If a `map` function is provided, transforms the data before passing to builder
+5. **Rebuilding**: Calls builder with the (optionally mapped) value whenever collection changes
+6. **Disposal**: Automatically closes the collection stream when widget is disposed
+
+## Stream Initialization
+
+The widget initializes the collection stream using both database and eventDatabase parameters:
+
+```dart
+stream = F.instance
+    .database(widget.database)
+    .eventDatabase(widget.eventDatabase)
+    .collection(widget.collection)
+    .snapshots() as ValueStream<DocumentReferenceWrapper>;
+```
+
+## Event Database Support
+
+<Tip>
+  Use the `eventDatabase` parameter when implementing event-driven architectures where collection changes are tracked separately from the main data.
+</Tip>
+
+```dart
+FCollectionStreamBuilder<List<Event>>(
+  collection: 'recentActivity',
+  database: 'mainDb',
+  eventDatabase: 'eventsDb',
+  builder: (context, events) {
+    return EventsList(events: events);
+  },
+)
+```
+
+## Using the Map Function
+
+Transform raw collection data into typed model objects:
+
+```dart
+class Post {
+  final String id;
+  final String title;
+  final String author;
+
+  Post({required this.id, required this.title, required this.author});
+
+  factory Post.fromMap(String id, Map<String, dynamic> map) {
+    return Post(
+      id: id,
+      title: map['title'] ?? '',
+      author: map['author'] ?? 'Unknown',
+    );
+  }
+}
+
+FCollectionStreamBuilder<List<Post>>(
+  collection: 'posts',
+  initialData: [],
+  map: (data) {
+    // Transform Map to List<Post>
+    if (data is Map<String, dynamic>) {
+      return data.entries
+          .map((e) => Post.fromMap(e.key, e.value))
+          .toList();
+    }
+    return [];
+  },
+  builder: (context, posts) {
+    return ListView.builder(
+      itemCount: posts.length,
+      itemBuilder: (context, index) {
+        final post = posts[index];
+        return Card(
+          child: ListTile(
+            title: Text(post.title),
+            subtitle: Text('By ${post.author}'),
+          ),
+        );
+      },
+    );
+  },
+)
+```
+
+## Lifecycle Management
+
+<Warning>
+  The collection stream is automatically closed in the `dispose()` method using the same database and eventDatabase parameters specified during initialization.
+</Warning>
+
+The widget handles the complete lifecycle:
+
+1. **initState**: Creates and subscribes to collection stream
+2. **build**: Rebuilds when collection data changes
+3. **dispose**: Closes the stream via:
+   ```dart
+   F.instance
+       .database(widget.database)
+       .eventDatabase(widget.eventDatabase)
+       .collection(widget.collection)
+       .close();
+   ```
+
+## Data Type Handling
+
+<Note>
+  Collection snapshots typically contain `DocumentReferenceWrapper` objects. The widget automatically extracts `snapshot.data` from these wrappers.
+</Note>
+
+The extracted data structure depends on your FSM configuration and collection schema. Common patterns:
+
+- **Map of Documents**: `Map<String, dynamic>` where keys are document IDs
+- **List of Items**: Use `map` function to convert to `List<T>`
+- **Single Document**: For collections that represent a single logical entity
+
+## Complete Example
+
+```dart
+class MessageList extends StatelessWidget {
+  final String channelId;
+
+  const MessageList({required this.channelId});
+
+  @override
+  Widget build(BuildContext context) {
+    return FCollectionStreamBuilder<Map<String, dynamic>>(
+      collection: 'channels/$channelId/messages',
+      database: 'chat',
+      eventDatabase: 'chatEvents',
+      initialData: {},
+      map: (data) {
+        // Sort messages by timestamp
+        if (data is! Map<String, dynamic>) return {};
+        
+        final sortedEntries = data.entries.toList()
+          ..sort((a, b) {
+            final aTime = a.value['timestamp'] ?? 0;
+            final bTime = b.value['timestamp'] ?? 0;
+            return bTime.compareTo(aTime);
+          });
+        
+        return Map.fromEntries(sortedEntries);
+      },
+      builder: (context, messages) {
+        if (messages.isEmpty) {
+          return Center(child: Text('No messages yet'));
+        }
+        
+        return ListView.builder(
+          reverse: true,
+          itemCount: messages.length,
+          itemBuilder: (context, index) {
+            final entry = messages.entries.elementAt(index);
+            final messageId = entry.key;
+            final message = entry.value;
+            
+            return MessageBubble(
+              author: message['author'] ?? 'Unknown',
+              text: message['text'] ?? '',
+              timestamp: message['timestamp'],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+```
+
+## Multiple Database Support
+
+Manage different collections across different databases:
+
+```dart
+Column(
+  children: [
+    FCollectionStreamBuilder(
+      collection: 'products',
+      database: 'inventory',
+      builder: (context, products) => ProductGrid(products),
+    ),
+    FCollectionStreamBuilder(
+      collection: 'orders',
+      database: 'sales',
+      eventDatabase: 'salesEvents',
+      builder: (context, orders) => OrdersList(orders),
+    ),
+  ],
+)
+```

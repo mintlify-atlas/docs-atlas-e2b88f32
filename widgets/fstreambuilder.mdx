@@ -1,0 +1,145 @@
+---
+title: 'FStreamBuilder'
+description: 'A widget that builds itself based on FSM stream snapshots with automatic lifecycle management'
+---
+
+## Overview
+
+`FStreamBuilder` is a Flutter widget that automatically subscribes to FSM streams and rebuilds when data changes. It handles the stream lifecycle automatically, requiring no manual subscription management.
+
+## Type Signature
+
+```dart
+class FStreamBuilder<T> extends StatefulWidget {
+  final ReferenceWrapper stream;
+  final dynamic initialData;
+  final StreamWidgetBuilder<T> builder;
+  final String? database;
+
+  const FStreamBuilder({
+    super.key,
+    required this.stream,
+    required this.builder,
+    this.database,
+    this.initialData,
+  });
+}
+```
+
+## Builder Function Signature
+
+```dart
+typedef StreamWidgetBuilder<T> = Widget Function(BuildContext context, T value);
+```
+
+## Parameters
+
+<ParamField path="stream" type="ReferenceWrapper" required>
+  The FSM reference to listen to. Can be a `DocumentReferenceWrapper`, `CollectionReferenceWrapper`, or `ValueReferenceWrapper`.
+</ParamField>
+
+<ParamField path="builder" type="StreamWidgetBuilder<T>" required>
+  A function that builds a widget based on the current snapshot value. Receives `BuildContext` and the typed value `T`.
+</ParamField>
+
+<ParamField path="database" type="String?">
+  Optional database name to use. If not specified, uses the default database.
+</ParamField>
+
+<ParamField path="initialData" type="dynamic">
+  Initial data to display before the first snapshot arrives. Defaults to null.
+</ParamField>
+
+## Usage Example
+
+```dart
+FStreamBuilder<int>(
+  stream: F.instance.collection('home').doc('counter'),
+  initialData: 0,
+  builder: (context, value) {
+    print('Value: $value');
+    return Text(value.toString());
+  },
+)
+```
+
+## How It Works
+
+<Note>
+  `FStreamBuilder` automatically manages stream subscriptions. You don't need to manually subscribe, unsubscribe, or dispose of streams.
+</Note>
+
+1. **Initialization**: On widget creation, `FStreamBuilder` extracts the appropriate stream from the `ReferenceWrapper`
+2. **Type Resolution**: Automatically detects whether the stream is from a document, collection, or value reference
+3. **Data Extraction**: Extracts the typed data from snapshots based on the reference type:
+   - `DocumentReferenceWrapper`: Extracts data from `DocumentSnapshotWrapper`
+   - `CollectionReferenceWrapper`: Extracts data from collection snapshots
+   - `ValueReferenceWrapper`: Uses the snapshot data directly
+4. **Rebuilding**: Calls the builder function with the extracted value whenever the stream emits new data
+5. **Disposal**: Automatically cleans up when the widget is disposed
+
+## Supported Reference Types
+
+The widget automatically handles three types of FSM references:
+
+| Reference Type | Data Extraction |
+|----------------|----------------|
+| `DocumentReferenceWrapper` | `snapshot.data` from `DocumentSnapshotWrapper` |
+| `CollectionReferenceWrapper` | `snapshot.data` from collection document |
+| `ValueReferenceWrapper` | Direct snapshot data |
+
+## Generic Type Parameter
+
+<Tip>
+  Specify the type parameter `<T>` to get proper type safety in your builder function:
+  ```dart
+  FStreamBuilder<int>(...) // Builder receives int
+  FStreamBuilder<Map<String, dynamic>>(...) // Builder receives Map
+  ```
+</Tip>
+
+## Initial Data Behavior
+
+<Warning>
+  The first build always uses `initialData` since Flutter's `StreamBuilder` doesn't have data on the first frame. Make sure to provide appropriate initial data to avoid null-related issues.
+</Warning>
+
+When the widget first builds, before any stream data arrives, the builder receives the `initialData` value. Once the stream emits its first event, subsequent builds use the actual stream data.
+
+## Complete Example
+
+```dart
+class CounterDisplay extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('You have pushed the button this many times:'),
+            FStreamBuilder<int>(
+              stream: F.instance.collection('home').doc('counter'),
+              initialData: 0,
+              builder: (context, value) {
+                return Text(
+                  value.toString(),
+                  style: Theme.of(context).textTheme.headlineMedium,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          final counterRef = F.instance.collection('home').doc('counter');
+          final currentValue = counterRef.snapshot.data ?? 0;
+          counterRef.setData(currentValue + 1);
+        },
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+```

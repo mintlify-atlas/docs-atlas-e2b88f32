@@ -1,0 +1,558 @@
+---
+title: 'Values'
+description: 'Access and update nested data efficiently with ValueReferenceWrapper'
+---
+
+## Overview
+
+Values provide granular access to nested fields within documents. Instead of fetching and updating entire documents, you can work directly with specific nested paths, improving performance and reducing unnecessary data transfers.
+
+## ValueReferenceWrapper
+
+The `ValueReferenceWrapper` class represents a reference to a specific nested value within a document.
+
+### API Signature
+
+```dart
+class ValueReferenceWrapper extends ReferenceWrapper {
+  // Properties
+  dynamic get data;
+  String get path;  // Full path including database, document, and value path
+  
+  // Methods
+  Future<void> setData(dynamic data, {bool merge = false, bool notify = false});
+  Future<void> updateData(dynamic data, {bool notify = false});
+  void notify();
+  Stream<dynamic> values({bool includeMetadataChanges = false});
+  void close();
+}
+```
+
+## Creating Value References
+
+Access nested values using path notation:
+
+```dart
+// Access a nested value
+final themeValue = F.instance
+  .collection('users')
+  .doc('user123')
+  .value('settings/theme');
+
+// Deeply nested value
+final notificationValue = F.instance
+  .collection('users')
+  .doc('user123')
+  .value('profile/preferences/notifications/email');
+```
+
+<Tip>
+  Use forward slashes (`/`) to navigate nested Maps, just like file paths.
+</Tip>
+
+## Reading Values
+
+### Synchronous Access
+
+Get the current value directly:
+
+```dart
+final themeValue = F.instance
+  .collection('users')
+  .doc('user123')
+  .value('settings/theme');
+
+// Get the current data
+final theme = themeValue.data;
+print('Current theme: $theme'); // 'dark'
+```
+
+### Value Data Property
+
+```dart
+// Document structure:
+// {
+//   'name': 'Alice',
+//   'settings': {
+//     'theme': 'dark',
+//     'language': 'en'
+//   }
+// }
+
+final themeRef = userDoc.value('settings/theme');
+print(themeRef.data); // 'dark'
+
+final settingsRef = userDoc.value('settings');
+print(settingsRef.data); // {'theme': 'dark', 'language': 'en'}
+```
+
+<Note>
+  The `data` property provides immediate access to the value without async operations, using the current in-memory state.
+</Note>
+
+## Writing Values
+
+### setData()
+
+Set a nested value within a document:
+
+```dart
+// Set a nested value
+await F.instance
+  .collection('users')
+  .doc('user123')
+  .value('settings/theme')
+  .setData('light');
+
+// Result: Document 'user123' now has:
+// {
+//   'settings': {
+//     'theme': 'light'  // Updated
+//   }
+// }
+```
+
+**Method Signature:**
+```dart
+Future<void> setData(
+  dynamic data,
+  {bool merge = false, bool notify = false}
+)
+```
+
+### Deep Path Creation
+
+Value references automatically create nested Maps as needed:
+
+```dart
+// Starting with empty document
+await userDoc.setData({});
+
+// Create deeply nested path
+await userDoc
+  .value('profile/preferences/notifications/email')
+  .setData(true);
+
+// Result:
+// {
+//   'profile': {
+//     'preferences': {
+//       'notifications': {
+//         'email': true
+//       }
+//     }
+//   }
+// }
+```
+
+<Accordion title="How Value Path Creation Works">
+  FSM uses the `buildValueMap()` function to construct nested Maps from paths:
+  
+  ```dart
+  // Input: value = true, path = ['profile', 'preferences', 'email']
+  // Output: {'profile': {'preferences': {'email': true}}}
+  
+  dynamic buildValueMap(dynamic value, List<String> pathComponents) {
+    if (pathComponents.isEmpty) return value;
+    
+    Map<String, dynamic> dataHolder = {
+      pathComponents.removeLast(): value
+    };
+    
+    for (String path in pathComponents.reversed) {
+      dataHolder = {path: dataHolder};
+    }
+    
+    return dataHolder;
+  }
+  ```
+  
+  This ensures you can set deeply nested values without manually creating intermediate objects.
+</Accordion>
+
+### updateData()
+
+Update a value if the path exists:
+
+```dart
+// Updates only if the value already exists
+await userDoc
+  .value('settings/theme')
+  .updateData('dark');
+```
+
+### Merge Behavior
+
+```dart
+// Initial document:
+// {
+//   'settings': {
+//     'theme': 'dark',
+//     'language': 'en'
+//   }
+// }
+
+// Update nested object with merge
+await userDoc
+  .value('settings')
+  .setData(
+    {'theme': 'light', 'fontSize': 14},
+    merge: true
+  );
+
+// Result:
+// {
+//   'settings': {
+//     'theme': 'light',    // Updated
+//     'language': 'en',    // Preserved
+//     'fontSize': 14       // Added
+//   }
+// }
+```
+
+## Streaming Value Changes
+
+### values() Stream
+
+Listen to changes on a specific value:
+
+```dart
+F.instance
+  .collection('users')
+  .doc('user123')
+  .value('settings/theme')
+  .values()
+  .listen((theme) {
+    print('Theme changed to: $theme');
+  });
+```
+
+<Note>
+  Value streams only emit when that specific value changes. Parent and sibling values changing will NOT trigger this stream.
+</Note>
+
+### Stream Behavior
+
+Value streams are isolated for performance:
+
+```dart
+// Listen to theme changes
+final themeStream = userDoc.value('settings/theme').values();
+themeStream.listen((value) => print('Theme: $value'));
+
+// Listen to language changes
+final langStream = userDoc.value('settings/language').values();
+langStream.listen((value) => print('Language: $value'));
+
+// Update theme - only themeStream emits
+await userDoc.value('settings/theme').setData('light');
+// Output: "Theme: light"
+
+// Update language - only langStream emits
+await userDoc.value('settings/language').setData('es');
+// Output: "Language: es"
+```
+
+<Accordion title="Value Stream Isolation">
+  From the FSM source code:
+  
+  > "Updating a value only updates direct snapshot listeners. Any parent or child streams are not updated. This is a performance optimization and prevents complex dependencies. To observe all path updates, listen to the root DocumentSnapshotWrapper."
+  
+  **When to use value streams:**
+  - You only care about changes to a specific field
+  - You want to avoid rebuilding when other document fields change
+  - You need fine-grained reactivity
+  
+  **When to use document streams:**
+  - You need to observe multiple fields
+  - You want to see all changes to a document
+  - You need access to the full document structure
+</Accordion>
+
+## Practical Examples
+
+### 1. Theme Toggle
+
+```dart
+class ThemeManager {
+  final _themeRef = F.instance
+    .collection('app')
+    .doc('settings')
+    .value('theme');
+  
+  // Get current theme
+  String get currentTheme => _themeRef.data ?? 'light';
+  
+  // Toggle theme
+  Future<void> toggleTheme() async {
+    final current = currentTheme;
+    final newTheme = current == 'light' ? 'dark' : 'light';
+    await _themeRef.setData(newTheme);
+  }
+  
+  // Stream theme changes
+  Stream<dynamic> watchTheme() => _themeRef.values();
+}
+```
+
+### 2. Notification Preferences
+
+```dart
+class NotificationSettings {
+  final String userId;
+  
+  NotificationSettings(this.userId);
+  
+  DocumentReferenceWrapper get _doc => 
+    F.instance.collection('users').doc(userId);
+  
+  // Toggle email notifications
+  Future<void> toggleEmail(bool enabled) {
+    return _doc.value('notifications/email').setData(enabled);
+  }
+  
+  // Toggle push notifications
+  Future<void> togglePush(bool enabled) {
+    return _doc.value('notifications/push').setData(enabled);
+  }
+  
+  // Get current settings
+  bool get emailEnabled => _doc.value('notifications/email').data ?? false;
+  bool get pushEnabled => _doc.value('notifications/push').data ?? false;
+  
+  // Watch specific notification type
+  Stream<dynamic> watchEmail() {
+    return _doc.value('notifications/email').values();
+  }
+}
+```
+
+### 3. Counter with History
+
+```dart
+class Counter {
+  final _doc = F.instance.collection('counters').doc('main');
+  
+  // Increment counter and track history
+  Future<void> increment() async {
+    final current = _doc.value('count').data ?? 0;
+    final newCount = current + 1;
+    
+    // Update count
+    await _doc.value('count').setData(newCount);
+    
+    // Add to history
+    await _doc.value('history/${FTimestamp.now().millisecondsSinceEpoch}')
+      .setData(newCount);
+  }
+  
+  // Get current count
+  int get count => _doc.value('count').data ?? 0;
+  
+  // Stream count changes
+  Stream<dynamic> watchCount() => _doc.value('count').values();
+}
+```
+
+### 4. Form Field Streams
+
+```dart
+class FormManager {
+  final formDoc = F.instance.collection('forms').doc('user_registration');
+  
+  // Stream individual field values
+  Stream<dynamic> watchField(String fieldName) {
+    return formDoc.value('fields/$fieldName').values();
+  }
+  
+  // Update field value
+  Future<void> updateField(String fieldName, dynamic value) {
+    return formDoc.value('fields/$fieldName').setData(value);
+  }
+  
+  // Validate and set error
+  Future<void> setFieldError(String fieldName, String? error) {
+    return formDoc.value('errors/$fieldName').setData(error);
+  }
+}
+
+// In widget:
+StreamBuilder<dynamic>(
+  stream: formManager.watchField('email'),
+  builder: (context, snapshot) {
+    return TextFormField(
+      initialValue: snapshot.data,
+      onChanged: (value) => formManager.updateField('email', value),
+    );
+  },
+)
+```
+
+## Path Syntax
+
+### Valid Paths
+
+```dart
+// Single level
+doc.value('name')
+
+// Nested
+doc.value('settings/theme')
+
+// Deeply nested
+doc.value('user/profile/address/city')
+
+// Numeric keys (treated as strings)
+doc.value('items/0/name')
+```
+
+### Path Resolution
+
+FSM uses the `getValue()` function to traverse paths:
+
+```dart
+// Document:
+{
+  'user': {
+    'profile': {
+      'name': 'Alice',
+      'age': 30
+    }
+  }
+}
+
+// Path: 'user/profile/name'
+final name = doc.value('user/profile/name').data;  // 'Alice'
+
+// Path: 'user/profile'
+final profile = doc.value('user/profile').data;  // {'name': 'Alice', 'age': 30}
+
+// Path: 'user/profile/email'
+final email = doc.value('user/profile/email').data;  // null (doesn't exist)
+```
+
+## Performance Benefits
+
+Value references optimize performance in several ways:
+
+1. **Granular updates**: Only update specific fields, not entire documents
+2. **Isolated streams**: Subscribe only to fields you care about
+3. **Reduced rebuilds**: Widgets only rebuild when relevant values change
+4. **Memory efficiency**: Store references instead of copies of data
+
+### Example: Efficient UI Updates
+
+```dart
+// Instead of:
+StreamBuilder<DocumentSnapshotWrapper>(
+  stream: userDoc.snapshots(),
+  builder: (context, snapshot) {
+    // Rebuilds on ANY document change
+    final data = snapshot.data?.data;
+    return Text(data['theme']);  // Rebuilds even if theme didn't change
+  },
+)
+
+// Do this:
+StreamBuilder<dynamic>(
+  stream: userDoc.value('theme').values(),
+  builder: (context, snapshot) {
+    // Only rebuilds when theme changes
+    return Text(snapshot.data ?? 'light');
+  },
+)
+```
+
+## Value Path Full Path
+
+Value references construct a full path including database, document, and value:
+
+```dart
+final valueRef = F.instance
+  .collection('users')
+  .doc('user123')
+  .value('settings/theme');
+
+// Full path includes everything
+print(valueRef.path);
+// 'default/users/user123/settings/theme'
+```
+
+This full path is used internally for stream management and change tracking.
+
+## Best Practices
+
+1. **Use values for granular UI**: Subscribe individual widgets to specific values they display.
+
+2. **Prefer values for isolated updates**: Update single fields without affecting other data.
+
+3. **Use document streams for holistic views**: When you need the full document, use document snapshots instead.
+
+4. **Handle null values**: Nested paths may not exist; provide defaults:
+   ```dart
+   final theme = themeRef.data ?? 'light';
+   ```
+
+5. **Structure data for value access**: Design your document schema with value access in mind:
+   ```dart
+   // Good: Easy value access
+   {
+     'settings': {
+       'theme': 'dark',
+       'language': 'en'
+     }
+   }
+   
+   // Avoid: Requires full document access
+   {
+     'settingsJson': '{"theme":"dark","language":"en"}'
+   }
+   ```
+
+6. **Use for feature flags**: Perfect for toggling features:
+   ```dart
+   final flagRef = F.instance
+     .collection('config')
+     .doc('features')
+     .value('enableBetaUI');
+   
+   if (flagRef.data == true) {
+     // Show beta UI
+   }
+   ```
+
+## Limitations
+
+<Note>
+  Value references only work with Map-based documents. FSM's `getValue()` function traverses Maps by key. Lists and other types don't support path-based access.
+</Note>
+
+```dart
+// Works: Map-based document
+{
+  'settings': {'theme': 'dark'}  // ✓ Can access via 'settings/theme'
+}
+
+// Doesn't work: List-based paths
+{
+  'items': ['apple', 'banana']   // ✗ Can't access via 'items/0'
+}
+```
+
+For List access, use document-level operations:
+```dart
+final snapshot = await doc.get();
+final items = snapshot.data['items'] as List;
+final firstItem = items[0];
+```
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Documents" icon="file" href="/concepts/documents">
+    Learn about document operations and snapshots
+  </Card>
+  <Card title="Collections" icon="folder" href="/concepts/collections">
+    Understand collection references and organization
+  </Card>
+</CardGroup>

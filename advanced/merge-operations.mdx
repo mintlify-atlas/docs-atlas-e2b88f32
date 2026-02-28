@@ -1,0 +1,483 @@
+---
+title: Merge Operations
+description: Deep merge data updates while preserving existing fields
+---
+
+## Overview
+
+The `merge` parameter in `setData()` and `updateData()` enables intelligent deep merging of map data. Instead of replacing the entire document, merge operations recursively update only the specified fields while preserving existing data.
+
+## Basic Syntax
+
+```dart
+// Without merge (replaces entire document)
+await ref.setData({'name': 'Alice'});  // Other fields are lost
+
+// With merge (preserves existing fields)
+await ref.setData({'name': 'Alice'}, merge: true);  // Other fields preserved
+```
+
+## The Merge Algorithm
+
+From `f_wrapper.dart:682-708`, here's how FSM merges data:
+
+```dart
+dynamic updateData(dynamic data, dynamic dataNew) {
+  // Mutable original data holder.
+  dynamic dataHolder = data;
+  // Merge update if both old and new data are Maps.
+  if (dataHolder is Map && dataNew is Map) {
+    // Cast type to prevent invalid type error.
+    dataHolder = Map<String, dynamic>.from(data);
+    // Update each key value.
+    for (String key in dataNew.keys) {
+      // Recursively update key values.
+      if (dataHolder[key] != null) {
+        if (dataHolder[key] is Map) {
+          dataHolder[key] = updateData(dataHolder[key], dataNew[key]);
+          continue;
+        }
+      }
+
+      // Key does not exist in data. Set to value directly.
+      dataHolder[key] = dataNew[key];
+    }
+  } else {
+    // Data cannot be merged. Overwrite existing data.
+    dataHolder = dataNew;
+  }
+
+  return dataHolder;
+}
+```
+
+### How It Works
+
+1. **Both Maps**: Recursively merges fields
+2. **Nested Maps**: Continues merging at each level
+3. **New Keys**: Adds them to the document
+4. **Existing Keys**: Updates their values
+5. **Non-Map Types**: Replaces the entire value
+
+## Merge Behavior in setData
+
+From `f_wrapper.dart:177-197`:
+
+```dart
+if (merge) {
+  // Build Map if value exists. Else, default to data.
+  dynamic dataHolder =
+      buildValueMap(data, pathDelegate.valuePathComponents);
+  // Merge old and new data if both are Maps and can be merged.
+  if (snapshot.data is Map && dataHolder is Map) {
+    dataHolder = updateData(snapshot.data, dataHolder);
+  }
+  // Package data as DocumentEvent.
+  DocumentEvent documentEvent = DocumentEvent(dataHolder);
+  // Create a new snapshot with the merged data.
+  DocumentSnapshotWrapper snapshotHolder = _snapshot(documentEvent);
+  // Update snapshot stream with the new snapshot.
+  snapshots[pathDelegate.path]?.add(snapshotHolder);
+  // ...
+}
+```
+
+## Examples
+
+### Example 1: Simple Field Update
+
+```dart
+final userRef = F.instance.doc('users/alice');
+
+// Initial data
+await userRef.setData({
+  'name': 'Alice',
+  'age': 30,
+  'email': 'alice@example.com',
+});
+
+// Update only age with merge
+await userRef.setData({
+  'age': 31,
+}, merge: true);
+
+// Result:
+// {
+//   'name': 'Alice',
+//   'age': 31,           // Updated
+//   'email': 'alice@example.com',
+// }
+```
+
+### Example 2: Deep Nested Merge
+
+```dart
+final profileRef = F.instance.doc('profiles/user123');
+
+// Initial data
+await profileRef.setData({
+  'name': 'Bob',
+  'settings': {
+    'theme': 'dark',
+    'notifications': {
+      'email': true,
+      'push': true,
+    },
+    'privacy': 'public',
+  },
+});
+
+// Update nested notification settings
+await profileRef.setData({
+  'settings': {
+    'notifications': {
+      'email': false,  // Update this
+      // 'push' is not mentioned, stays true
+    },
+    // 'theme' and 'privacy' not mentioned, preserved
+  },
+}, merge: true);
+
+// Result:
+// {
+//   'name': 'Bob',
+//   'settings': {
+//     'theme': 'dark',        // Preserved
+//     'notifications': {
+//       'email': false,       // Updated
+//       'push': true,         // Preserved
+//     },
+//     'privacy': 'public',    // Preserved
+//   },
+// }
+```
+
+### Example 3: Adding New Fields
+
+```dart
+final docRef = F.instance.doc('documents/doc1');
+
+await docRef.setData({
+  'title': 'My Document',
+  'content': 'Initial content',
+});
+
+// Add new fields while preserving existing ones
+await docRef.setData({
+  'author': 'Alice',
+  'tags': ['important', 'draft'],
+}, merge: true);
+
+// Result:
+// {
+//   'title': 'My Document',    // Preserved
+//   'content': 'Initial content', // Preserved
+//   'author': 'Alice',         // Added
+//   'tags': ['important', 'draft'], // Added
+// }
+```
+
+### Example 4: Merge vs Replace Comparison
+
+```dart
+final taskRef = F.instance.doc('tasks/task1');
+
+await taskRef.setData({
+  'title': 'Complete project',
+  'priority': 'high',
+  'assignee': 'Alice',
+  'subtasks': ['Design', 'Implement', 'Test'],
+});
+
+// WITHOUT merge - replaces everything
+await taskRef.setData({
+  'completed': true,
+});
+// Result: {'completed': true}  ❌ Lost all other fields!
+
+// Reset
+await taskRef.setData({
+  'title': 'Complete project',
+  'priority': 'high',
+  'assignee': 'Alice',
+  'subtasks': ['Design', 'Implement', 'Test'],
+});
+
+// WITH merge - preserves existing fields
+await taskRef.setData({
+  'completed': true,
+}, merge: true);
+// Result: ✅
+// {
+//   'title': 'Complete project',
+//   'priority': 'high',
+//   'assignee': 'Alice',
+//   'subtasks': ['Design', 'Implement', 'Test'],
+//   'completed': true,  // Added
+// }
+```
+
+### Example 5: Non-Map Types Replace
+
+```dart
+final ref = F.instance.doc('data/example');
+
+await ref.setData({
+  'value': {'nested': 'map'},
+  'count': 42,
+});
+
+// Merge with non-map type replaces the field
+await ref.setData({
+  'value': 'simple string',  // Replaces the entire map
+}, merge: true);
+
+// Result:
+// {
+//   'value': 'simple string',  // Replaced (was a map, now a string)
+//   'count': 42,               // Preserved
+// }
+```
+
+## Using Merge with Value References
+
+Merge works with nested value updates:
+
+```dart
+final valueRef = F.instance.doc('config/app').value('features');
+
+// Initial document
+await F.instance.doc('config/app').setData({
+  'version': '1.0',
+  'features': {
+    'dark_mode': true,
+    'analytics': false,
+  },
+});
+
+// Merge update to nested value
+await valueRef.setData({
+  'notifications': true,  // Add new feature
+}, merge: true);
+
+// Result document:
+// {
+//   'version': '1.0',
+//   'features': {
+//     'dark_mode': true,
+//     'analytics': false,
+//     'notifications': true,  // Added
+//   },
+// }
+```
+
+## updateData() Uses Merge Automatically
+
+From `f_wrapper.dart:223-235`:
+
+```dart
+Future<void> _updateDocumentData(
+    DocumentReferenceWrapper documentReference, dynamic data,
+    {bool notify = false}) async {
+  if (snapshots.containsKey(pathDelegate.path)) {
+    if ((snapshots[pathDelegate.path]?.hasValue ?? false) &&
+        getValue(snapshots[pathDelegate.path]?.value.data,
+                pathDelegate.valuePath) !=
+            null) {
+      _setDocumentData(documentReference, data, merge: true, notify: notify);
+    }
+  }
+  return;
+}
+```
+
+`updateData()` always uses `merge: true` internally:
+
+```dart
+// These are equivalent:
+await ref.updateData({'age': 31});
+await ref.setData({'age': 31}, merge: true);
+```
+
+<Note>
+`updateData()` only updates if the document already exists and has a value at the specified path.
+</Note>
+
+## Advanced Patterns
+
+### Pattern 1: Partial Form Updates
+
+```dart
+class UserProfileForm {
+  final DocumentReferenceWrapper profileRef;
+
+  UserProfileForm(String userId)
+      : profileRef = F.instance.doc('profiles/$userId');
+
+  // Update individual form sections without affecting others
+  Future<void> updateContactInfo({
+    String? email,
+    String? phone,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (email != null) updates['contact.email'] = email;
+    if (phone != null) updates['contact.phone'] = phone;
+
+    await profileRef.setData({
+      'contact': {
+        if (email != null) 'email': email,
+        if (phone != null) 'phone': phone,
+      },
+    }, merge: true);
+  }
+
+  Future<void> updatePreferences(Map<String, dynamic> prefs) async {
+    await profileRef.setData({
+      'preferences': prefs,
+    }, merge: true);
+  }
+}
+```
+
+### Pattern 2: Feature Flags
+
+```dart
+class FeatureFlags {
+  final DocumentReferenceWrapper _flagsRef;
+
+  FeatureFlags()
+      : _flagsRef = F.instance.doc('config/features');
+
+  Future<void> enableFeature(String featureName) async {
+    await _flagsRef.setData({
+      featureName: true,
+    }, merge: true);
+  }
+
+  Future<void> disableFeature(String featureName) async {
+    await _flagsRef.setData({
+      featureName: false,
+    }, merge: true);
+  }
+
+  Future<void> setMultipleFeatures(Map<String, bool> features) async {
+    await _flagsRef.setData(features, merge: true);
+  }
+}
+```
+
+### Pattern 3: Incremental Data Building
+
+```dart
+class ReportBuilder {
+  final DocumentReferenceWrapper reportRef;
+
+  ReportBuilder(String reportId)
+      : reportRef = F.instance.doc('reports/$reportId');
+
+  Future<void> initialize() async {
+    await reportRef.setData({
+      'created': DateTime.now().toIso8601String(),
+      'status': 'building',
+    });
+  }
+
+  Future<void> addSection(String sectionName, dynamic data) async {
+    await reportRef.setData({
+      'sections': {
+        sectionName: data,
+      },
+    }, merge: true);
+  }
+
+  Future<void> finalize() async {
+    await reportRef.setData({
+      'status': 'complete',
+      'completed': DateTime.now().toIso8601String(),
+    }, merge: true);
+  }
+}
+
+// Usage:
+final builder = ReportBuilder('monthly_2024_01');
+await builder.initialize();
+await builder.addSection('sales', {'total': 50000});
+await builder.addSection('expenses', {'total': 30000});
+await builder.addSection('profit', {'total': 20000});
+await builder.finalize();
+```
+
+## Merge with Collections
+
+From `f_wrapper.dart:429-436`:
+
+```dart
+Future<DocumentReferenceWrapper> add(
+  dynamic data, {
+  bool merge = false,
+}) async {
+  final DocumentReferenceWrapper newDocument = doc();
+  await newDocument.setData(data, merge: merge);
+  return newDocument;
+}
+```
+
+Collections also support merge:
+
+```dart
+final collection = F.instance.collection('users');
+
+// Even new documents can use merge
+final docRef = await collection.add({
+  'name': 'Charlie',
+}, merge: true);
+```
+
+## Performance Considerations
+
+<Tip>
+**Use merge for partial updates**: Merge is more efficient than reading, modifying, and writing back the entire document.
+</Tip>
+
+<Warning>
+**Deep nesting**: Very deeply nested merges may have performance implications. Consider flattening your data structure if you notice slowdowns.
+</Warning>
+
+## Common Pitfalls
+
+### Pitfall 1: Arrays Don't Merge
+
+```dart
+await ref.setData({'tags': ['a', 'b', 'c']});
+
+// Arrays are replaced, not merged
+await ref.setData({'tags': ['d']}, merge: true);
+
+// Result: {'tags': ['d']}  ❌ Not ['a', 'b', 'c', 'd']
+```
+
+**Solution**: Read, modify, then write:
+
+```dart
+final snapshot = await ref.get();
+final currentTags = List<String>.from(snapshot.data['tags'] ?? []);
+currentTags.add('d');
+await ref.setData({'tags': currentTags}, merge: true);
+```
+
+### Pitfall 2: Type Changes
+
+```dart
+await ref.setData({'count': 42});
+
+// Changing type replaces the value
+await ref.setData({'count': 'forty-two'}, merge: true);
+
+// Result: {'count': 'forty-two'}  // Type changed from int to String
+```
+
+## Related
+
+- [Documents](/concepts/documents) - Basic data operations
+- [Values](/concepts/values) - Working with nested values
+- [Notifications](/advanced/notifications) - Combining merge with signals

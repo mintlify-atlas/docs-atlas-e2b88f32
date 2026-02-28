@@ -1,0 +1,134 @@
+---
+title: Core Concepts Overview
+description: Understand FSM's hierarchical data model and Firebase-inspired design
+---
+
+## Introduction
+
+FSM (Firestore State Management) provides a local, in-memory state management solution inspired by Firebase's hierarchical data model. It enables you to organize your Flutter app's state in a familiar, path-based structure without requiring a backend connection.
+
+## Hierarchical Data Model
+
+FSM organizes data in a four-level hierarchy:
+
+```
+Database → Collection → Document → Value
+```
+
+<Note>
+  Each level in the hierarchy serves a specific purpose and provides different APIs for accessing and manipulating data.
+</Note>
+
+### Structure Breakdown
+
+1. **Database**: The root container for all your data
+   - Default database: `'default'`
+   - Optional event database for ephemeral state
+   - Access via `F.instance.database([name])`
+
+2. **Collection**: A group of related documents
+   - Contains documents with similar data structures
+   - Accessed by path: `collection('users')`
+   - Can be nested within documents
+
+3. **Document**: Individual data records
+   - Stores structured data (Maps, Lists, primitives)
+   - Identified by unique IDs
+   - Accessed by path: `doc('userId')`
+
+4. **Value**: Nested fields within documents
+   - Access deeply nested data without fetching entire documents
+   - Performance optimization for granular updates
+   - Accessed via: `doc('userId').value('profile/name')`
+
+## Path-Based API
+
+FSM uses a fluent, path-based API that mirrors Firebase's syntax:
+
+```dart
+// Access a document
+F.instance
+  .collection('users')
+  .doc('user123')
+  .setData({'name': 'Alice', 'age': 30});
+
+// Access nested collections
+F.instance
+  .collection('users')
+  .doc('user123')
+  .collection('posts')
+  .doc('post456')
+  .setData({'title': 'Hello World'});
+
+// Access deeply nested values
+F.instance
+  .collection('users')
+  .doc('user123')
+  .value('profile/settings/theme')
+  .setData('dark');
+```
+
+<Tip>
+  The path-based API makes it easy to organize and access your app's state in a predictable, scalable way.
+</Tip>
+
+## Reactive Updates
+
+FSM is built on RxDart's `BehaviorSubject`, providing reactive streams for all data levels:
+
+- **Document snapshots**: Stream changes to entire documents
+- **Collection snapshots**: Stream when documents are added/modified
+- **Value streams**: Stream changes to specific nested fields
+- **Global observer**: Monitor all FSM updates for debugging
+
+```dart
+// Listen to document changes
+F.instance
+  .collection('users')
+  .doc('user123')
+  .snapshots()
+  .listen((snapshot) {
+    print('User data: ${snapshot.data}');
+  });
+```
+
+## Firebase-Inspired Design
+
+FSM intentionally mirrors Firebase's API to provide:
+
+1. **Familiar syntax**: If you know Firebase, you know FSM
+2. **Easy migration**: Transition between local and cloud state seamlessly
+3. **Best practices**: Leverage Firebase's battle-tested data modeling patterns
+4. **Path-based organization**: Intuitive hierarchical structure
+
+<Note>
+  While FSM mirrors Firebase's API, it operates entirely in-memory with no network calls or persistence by default.
+</Note>
+
+## Key Differences from Firebase
+
+| Feature | Firebase | FSM |
+|---------|----------|-----|
+| Storage | Cloud database | In-memory |
+| Persistence | Automatic | Manual (app responsibility) |
+| Network | Required | None |
+| Queries | Full query API | Stream-based access |
+| Offline | Built-in sync | Not applicable |
+| Cost | Usage-based | Free |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Databases" icon="database" href="/concepts/databases">
+    Learn about database references and multi-database support
+  </Card>
+  <Card title="Collections" icon="folder" href="/concepts/collections">
+    Discover how to organize documents in collections
+  </Card>
+  <Card title="Documents" icon="file" href="/concepts/documents">
+    Understand document operations and snapshots
+  </Card>
+  <Card title="Values" icon="code" href="/concepts/values">
+    Access nested data with value references
+  </Card>
+</CardGroup>
