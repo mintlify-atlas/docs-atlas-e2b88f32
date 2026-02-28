@@ -1,0 +1,127 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "FSM",
+  "projectDescription": "A Firebase-inspired state management library for Flutter that enables reactive data flow and widget communication using streams.",
+  "theme": "palm",
+  "primaryColor": "#02569B",
+  "lightColor": "#13B9FD",
+  "darkColor": "#01426D",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/databases",
+              "concepts/collections",
+              "concepts/documents",
+              "concepts/values"
+            ]
+          },
+          {
+            "group": "Flutter Widgets",
+            "pages": [
+              "widgets/fstreambuilder",
+              "widgets/fdocumentstreambuilder",
+              "widgets/fcollectionstreambuilder",
+              "widgets/fmultistreambuilder"
+            ]
+          },
+          {
+            "group": "Listener Mixins",
+            "pages": [
+              "mixins/overview",
+              "mixins/flistener",
+              "mixins/fstreamsubscriber"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/event-databases",
+              "advanced/global-observer",
+              "advanced/merge-operations",
+              "advanced/notifications"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/f-instance",
+              "api/database-reference",
+              "api/collection-reference",
+              "api/document-reference",
+              "api/value-reference"
+            ]
+          },
+          {
+            "group": "Data Types",
+            "pages": [
+              "api/document-snapshot",
+              "api/document-event",
+              "api/ftimestamp"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/auto-id",
+              "api/utility-functions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Firebase-inspired API for familiar developer experience",
+    "Reactive state management using RxDart streams",
+    "Stream-based Flutter widgets (FStreamBuilder, FDocumentStreamBuilder, FCollectionStreamBuilder)",
+    "Hierarchical data organization with databases, collections, documents, and values",
+    "Listener mixins for automatic subscription management",
+    "Event databases for ephemeral signaling",
+    "Global observer for debugging and monitoring",
+    "Merge operations for partial data updates",
+    "Automatic subscription cleanup and memory management"
+  ],
+  "publicApiSurface": [
+    "F.instance",
+    "F.database()",
+    "F.eventDatabase()",
+    "F.collection()",
+    "F.doc()",
+    "CollectionReferenceWrapper",
+    "DocumentReferenceWrapper",
+    "ValueReferenceWrapper",
+    "DocumentSnapshotWrapper",
+    "DocumentEvent",
+    "FTimestamp",
+    "FStreamBuilder",
+    "FDocumentStreamBuilder",
+    "FCollectionStreamBuilder",
+    "FMultiStreamBuilder",
+    "FListenerMixin",
+    "FListenerStateMixin",
+    "FListenerChangeNotifierMixin",
+    "FStreamSubscriberMixin",
+    "FStreamSubscriberStateMixin",
+    "FStreamSubscriberChangeNotifierMixin",
+    "AutoID.autoID"
+  ]
+}
